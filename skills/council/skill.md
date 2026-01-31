@@ -64,6 +64,24 @@ If the topic spans multiple categories, mix accordingly. Use judgment.
 
 When manually specified, use exactly those personas. No substitution.
 
+### Dispatch Mode
+
+Controls how agents are launched. Can be specified with `--mode`:
+
+```
+/council --mode sequential [question]
+/council --mode staggered [question]
+/council --mode parallel [question]
+```
+
+| Mode | Behavior | Best for |
+|------|----------|----------|
+| **parallel** | All 3 agents launch simultaneously | Fast machines, short prompts |
+| **staggered** (default) | Codex + Gemini launch together, Claude launches after they finish | Balanced — avoids the heaviest overlap |
+| **sequential** | Agents launch one at a time (Codex → Gemini → Claude) | Slow machines, or when parallel is locking up |
+
+Default is **staggered** because the `claude` CLI is the heaviest process and most likely to timeout when competing for resources.
+
 **Each agent gets ONE persona per session.** Assign them round-robin (Codex gets persona 1, Gemini gets persona 2, Claude gets persona 3). Note the assignment in the briefing header so the user knows who played what role.
 
 ## Flow
@@ -109,7 +127,7 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
 
 0. Run `mkdir -p ~/.claude/council/sessions && mkdir -p ~/Documents/council` first to ensure save directories exist (silent no-op if they already exist)
 
-1. Run all three agents in parallel using Bash:
+1. Run the three agents according to the **dispatch mode** (default: staggered):
 
    **Codex (OpenAI):**
    ```bash
@@ -125,6 +143,11 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
    ```bash
    claude -p '<PROMPT>' --no-session-persistence 2>/dev/null
    ```
+
+   **Dispatch modes:**
+   - **parallel**: Launch all 3 Bash calls simultaneously
+   - **staggered** (default): Launch Codex + Gemini in parallel, wait for both to finish, then launch Claude alone
+   - **sequential**: Launch Codex, wait for it to finish, then Gemini, wait, then Claude
 
 2. Synthesize the three responses as a neutral mediator (not a fourth opinion)
 
@@ -290,7 +313,7 @@ Also update the JSON checkpoint to set `"archived": true`.
 
 ## Important Notes
 
-- **Timeout:** Give each agent up to 120 seconds. If one times out, note it and proceed with the others.
+- **Timeout:** Give each agent up to 60 seconds. If one times out, note it and proceed with the others. The previous 120-second timeout caused resource contention and lockups on some machines.
 - **Failures:** If a CLI fails (not installed, auth expired, etc.), note it and proceed with available agents. Don't block on one agent being down.
 - **Context limits:** Keep the prompt self-contained. Don't assume the other agents have access to local files — include relevant snippets directly in the prompt.
 - **No code execution:** This skill is for consultation only. Don't ask the other agents to write or modify files. If the council reaches a conclusion that involves code changes, the mediator handles implementation after the session.
