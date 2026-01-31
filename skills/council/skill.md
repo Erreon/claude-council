@@ -152,7 +152,7 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
 
    **Codex (OpenAI):**
    ```bash
-   echo "<PROMPT>" | codex exec - 2>/dev/null
+   echo "<PROMPT>" | codex exec --skip-git-repo-check - 2>/dev/null
    ```
 
    **Gemini (Google):**
