@@ -20,7 +20,7 @@ You → /council Should I build or buy this feature?
     ▼           ▼           ▼
 ┌────────┐ ┌────────┐ ┌────────┐
 │ Agent 1│ │ Agent 2│ │ Agent 3│  ← Each gets a persona
-│ as The │ │ as The │ │ as The │  ← All run in parallel
+│ as The │ │ as The │ │ as The │  ← Staggered by default
 │Contrarian│Pragmatist│Systems │  ← Isolated from main context
 │        │ │        │ │Thinker │
 └────┬───┘ └────┬───┘ └────┬───┘
@@ -159,13 +159,33 @@ If you're using WSL, it should work the same as Linux. Native Windows may requir
 The mediator will:
 1. Check past sessions for relevant history
 2. Auto-assign personas based on the topic
-3. Dispatch to all three agents in parallel
+3. Dispatch agents (staggered by default)
 4. Synthesize a briefing with agreement, disagreement, and key tensions
 
 **Manual persona override:**
 ```
 /council --personas "Contrarian, Economist, Radical" Should we raise prices?
 ```
+
+**Dispatch mode** — Control how agents are launched:
+```
+/council --mode parallel Should we use Redis?     # All 3 at once
+/council --mode staggered Should we use Redis?    # Codex+Gemini, then Claude (default)
+/council --mode sequential Should we use Redis?   # One at a time
+```
+
+| Mode | Behavior | Best for |
+|------|----------|----------|
+| **parallel** | All 3 agents simultaneously | Fast machines, short prompts |
+| **staggered** (default) | Codex + Gemini together, Claude after | Balanced — avoids heaviest overlap |
+| **sequential** | One at a time | Slower machines, or when parallel locks up |
+
+**Fun mode** — Add chaotic energy:
+```
+/council --fun Should we rewrite the backend in Rust?
+```
+
+Randomly replaces one council seat with a fun persona (see [Fun Personas](#fun-personas) below).
 
 **Follow-up replies:** After a briefing, just reply normally — the council will re-dispatch with your pushback included and note any position shifts.
 
@@ -223,6 +243,28 @@ The mediator picks personas based on topic:
 | Marketing/growth | Contrarian + User Advocate + Growth Hacker |
 | Debugging/stuck | Contrarian + Pragmatist + Systems Thinker |
 | Strategic/big-picture | Contrarian + Visionary + Radical |
+
+### Fun Personas
+
+Fun personas are **never auto-assigned**. They're activated with `--fun` (randomly picks one to replace a council seat) or by naming them in `--personas`.
+
+| Persona | Role |
+|---------|------|
+| **The Jokester** | Roasts bad ideas mercilessly, but always lands on a real recommendation buried in the bit |
+| **The Trickster** | Counterintuitive advice that sounds wrong but might be genius. Loves lateral thinking. |
+| **The Cheater** | Every shortcut, hack, and loophole. Why build it when you can fake it? |
+| **The Conspiracy Theorist** | Sees hidden connections everywhere. Paranoid but occasionally spots what everyone missed. |
+| **The Time Traveler** | Answers from 10 years in the future. Annoyingly smug but sometimes genuinely prescient. |
+| **The Intern** | Enthusiastic, slightly confused, asks "dumb" questions that turn out to be devastatingly insightful. |
+
+**Examples:**
+```
+/council --fun What framework should we use?
+# → Might get: Contrarian + Pragmatist + The Intern
+
+/council --personas "Contrarian, Jokester, Time Traveler" Is AI overhyped?
+# → Full chaos mode
+```
 
 ## Session Storage
 
