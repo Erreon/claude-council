@@ -15,13 +15,5 @@
     "debate",
     "personas",
     "deliberation"
-  ],
-  "hooks": {
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "${CLAUDE_PLUGIN_ROOT}/hooks/sessions-init.sh"
-      }
-    ]
-  }
+  ]
 }
