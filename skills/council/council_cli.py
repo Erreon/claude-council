@@ -178,7 +178,11 @@ TOPIC_TO_PERSONAS = {
     "strategic":    ["The Contrarian", "The Visionary", "The Radical"],
 }
 
-AGENT_ORDER = ["codex", "gemini", "claude"]
+AGENT_ORDER = ["advisor_1", "advisor_2", "advisor_3"]
+
+# Maps old provider-based keys to new advisor keys (for backward compat)
+LEGACY_KEY_MAP = {"codex": "advisor_1", "gemini": "advisor_2", "claude": "advisor_3"}
+LEGACY_KEYS = set(LEGACY_KEY_MAP.keys())
 
 # ---------------------------------------------------------------------------
 # Stop Words (for keyword extraction / similarity)
@@ -246,6 +250,34 @@ def ensure_dirs():
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def normalize_legacy_keys(data):
+    """Remap old codex/gemini/claude keys to advisor_1/2/3 in-memory (non-destructive)."""
+    # Normalize personas dict
+    personas = data.get("personas", {})
+    if any(k in LEGACY_KEYS for k in personas):
+        new_personas = {}
+        for old, new in LEGACY_KEY_MAP.items():
+            if old in personas:
+                new_personas[new] = personas[old]
+        data["personas"] = new_personas
+
+    # Add labels from legacy keys if not present
+    if "labels" not in data and any(k in LEGACY_KEYS for k in personas):
+        data["labels"] = {
+            "advisor_1": "Codex (OpenAI)",
+            "advisor_2": "Gemini (Google)",
+            "advisor_3": "Claude (Anthropic)",
+        }
+
+    # Normalize round data
+    for rnd in data.get("rounds", []):
+        for old, new in LEGACY_KEY_MAP.items():
+            if old in rnd and new not in rnd:
+                rnd[new] = rnd.pop(old)
+
+    return data
+
+
 def load_session(session_id):
     """Load a session by ID, searching for matching file."""
     for f in SESSIONS_DIR.glob("*.json"):
@@ -310,7 +342,7 @@ def cmd_parse(args):
 
     result = {
         "fun": False,
-        "mode": "staggered",
+        "mode": "parallel",
         "personas": None,
         "question": "",
     }
@@ -527,8 +559,11 @@ def cmd_synthesis_prompt(args):
     else:
         err("--stdin required: pipe agent responses as JSON")
 
-    # data should be {"codex": {"persona": "...", "response": "..."}, ...}
-    # or {"codex": "response text", ...} with separate persona info
+    # Normalize legacy keys if present
+    for old, new in LEGACY_KEY_MAP.items():
+        if old in data and new not in data:
+            data[new] = data.pop(old)
+
     question = args.question
     personas_info = args.personas_json or "{}"
     try:
@@ -536,7 +571,18 @@ def cmd_synthesis_prompt(args):
     except json.JSONDecodeError:
         personas_map = {}
 
+    labels_info = args.labels_json or "{}"
+    try:
+        labels_map = json.loads(labels_info) if isinstance(labels_info, str) else labels_info
+    except json.JSONDecodeError:
+        labels_map = {}
+
+    # Determine if all labels are the same (persona-only mode)
+    label_values = [labels_map.get(a, "") for a in AGENT_ORDER if a in data]
+    all_same_label = len(set(label_values)) <= 1 and all(label_values)
+
     responses_block = ""
+    advisor_headers = []
     for agent in AGENT_ORDER:
         if agent in data:
             resp = data[agent]
@@ -546,12 +592,35 @@ def cmd_synthesis_prompt(args):
             else:
                 persona = personas_map.get(agent, "Unknown")
                 text = str(resp)
-            provider = {"codex": "OpenAI", "gemini": "Google", "claude": "Anthropic"}.get(agent, agent)
-            responses_block += f"\n**{agent.capitalize()} ({provider}) as {persona}:**\n{text}\n"
+            label = labels_map.get(agent, agent)
+            if all_same_label:
+                header = f"**{persona}**"
+            else:
+                header = f"**{label} as {persona}**"
+            advisor_headers.append((header, persona, label))
+            responses_block += f"\n{header}:\n{text}\n"
 
     prior_line = ""
     if args.prior_context:
         prior_line = f"\nPrior context: {args.prior_context}\n"
+
+    # Build format example based on labeling mode
+    if all_same_label:
+        personas_line = ", ".join(h[1] for h in advisor_headers)
+        advisor_lines = "\n\n".join(
+            f"{h[0]}: [2-3 sentence summary of their position + their RECOMMENDATION]"
+            for h in advisor_headers
+        )
+        matrix_headers = " | ".join(h[1] for h in advisor_headers)
+    else:
+        personas_line = ", ".join(f"{h[2]} as {h[1]}" for h in advisor_headers)
+        advisor_lines = "\n\n".join(
+            f"{h[0]}: [2-3 sentence summary of their position + their RECOMMENDATION]"
+            for h in advisor_headers
+        )
+        matrix_headers = " | ".join(f"{h[2]} ({h[1]})" for h in advisor_headers)
+
+    matrix_positions = " | ".join("[2-5 word position]" for _ in advisor_headers)
 
     prompt = f"""You are the neutral mediator for a council of AI advisors. Synthesize their responses.
 
@@ -565,13 +634,9 @@ Produce a briefing in this EXACT format:
 ---
 
 **Council Briefing: [Topic]**
-*Personas: Codex as [Persona], Gemini as [Persona], Claude as [Persona]*
+*Personas: {personas_line}*
 
-**Codex (OpenAI) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
-
-**Gemini (Google) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
-
-**Claude (Anthropic) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
+{advisor_lines}
 
 **Evidence Audit:** [If any consensus point rests primarily on [SPECULATIVE] claims from multiple advisors, flag it. If all key claims are anchored or inferred, write "All key claims grounded." 1-2 sentences.]
 
@@ -582,10 +647,10 @@ Produce a briefing in this EXACT format:
 
 **Disagreement Matrix:**
 
-| Topic | Codex ([Persona]) | Gemini ([Persona]) | Claude ([Persona]) |
-|-------|-------------------|--------------------|--------------------|
-| [Key issue 1] | [2-5 word position] | [2-5 word position] | [2-5 word position] |
-| [Key issue 2] | [position] | [position] | [position] |
+| Topic | {matrix_headers} |
+|-------|{"|".join("---" for _ in advisor_headers)}|
+| [Key issue 1] | {matrix_positions} |
+| [Key issue 2] | {matrix_positions} |
 
 Note which disagreements stem from persona framing vs genuine analytical divergence.
 
@@ -621,12 +686,18 @@ def cmd_session(args):
         except json.JSONDecodeError:
             err("invalid JSON for --personas")
 
+        try:
+            labels = json.loads(args.labels_json) if args.labels_json else {}
+        except json.JSONDecodeError:
+            err("invalid JSON for --labels")
+
         session = {
             "id": session_id,
             "topic": topic,
             "question": args.question,
             "date": now.strftime("%Y-%m-%d"),
             "personas": personas,
+            "labels": labels,
             "prior_context": args.prior_context,
             "rounds": [],
             "archived": False,
@@ -767,7 +838,12 @@ def cmd_similarity(args):
     else:
         err("--stdin required: pipe responses as JSON object")
 
-    # data: {"codex": "response text", "gemini": "response text", ...}
+    # Normalize legacy keys if present
+    for old, new in LEGACY_KEY_MAP.items():
+        if old in data and new not in data:
+            data[new] = data.pop(old)
+
+    # data: {"advisor_1": "response text", "advisor_2": "response text", ...}
     keyword_sets = {}
     for agent, text in data.items():
         keyword_sets[agent] = extract_keywords(str(text))
@@ -845,6 +921,7 @@ def main():
     p_synth = subparsers.add_parser("synthesis-prompt", help="Build synthesis prompt")
     p_synth.add_argument("--question", required=True)
     p_synth.add_argument("--personas-json", default=None, help="JSON map of agent->persona")
+    p_synth.add_argument("--labels-json", default=None, help="JSON map of agent->label (e.g. 'Claude', 'Codex (OpenAI)')")
     p_synth.add_argument("--prior-context", default=None)
     p_synth.add_argument("--stdin", action="store_true")
 
@@ -855,6 +932,7 @@ def main():
     p_session.add_argument("--question", default=None)
     p_session.add_argument("--topic", default=None)
     p_session.add_argument("--personas-json", default=None, help="JSON map of agent->persona")
+    p_session.add_argument("--labels-json", default=None, help="JSON map of agent->label")
     p_session.add_argument("--prior-context", default=None)
     p_session.add_argument("--rating", type=int, choices=[1, 2, 3, 4, 5], default=None)
     p_session.add_argument("--status", default=None)

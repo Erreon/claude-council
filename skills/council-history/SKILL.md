@@ -63,7 +63,9 @@ Present the user with options:
 
 ### 3. Recap Format
 
-When recapping a session, present it concisely:
+When recapping a session, present it concisely. Sessions may use either old-format keys (`codex`, `gemini`, `claude`) or new-format keys (`advisor_1`, `advisor_2`, `advisor_3`).
+
+**Key format detection:** Check the session's `personas` object. If it has keys like `codex`/`gemini`/`claude`, use provider names as labels. If it has keys like `advisor_1`/`advisor_2`/`advisor_3`, check the `labels` object for display names (fallback to "Advisor 1/2/3" if no labels).
 
 ---
 
@@ -74,9 +76,13 @@ When recapping a session, present it concisely:
 **Rounds:** [N]
 
 **Final positions:**
-- **Codex:** [1 sentence]
-- **Gemini:** [1 sentence]
-- **Claude:** [1 sentence]
+- **[Advisor 1 display name]:** [1 sentence]
+- **[Advisor 2 display name]:** [1 sentence]
+- **[Advisor 3 display name]:** [1 sentence]
+
+For old sessions: display names are "Codex", "Gemini", "Claude".
+For new sessions with all-same labels: display names are the persona names.
+For new sessions with different labels: display names are "Label as Persona".
 
 **Outcome:** [Consensus / Split / Debate escalated] — [1-2 sentence summary of where it landed]
 [**Result:** [status] — [note] (if outcome annotation exists)]

@@ -19,8 +19,8 @@ You → /council Should I build or buy this feature?
     ┌───────────┼───────────┐
     ▼           ▼           ▼
 ┌────────┐ ┌────────┐ ┌────────┐
-│ Agent 1│ │ Agent 2│ │ Agent 3│  ← Each gets a persona
-│ as The │ │ as The │ │ as The │  ← Staggered by default
+│Advisor 1│ │Advisor 2│ │Advisor 3│  ← Each gets a persona
+│ as The │ │ as The │ │ as The │  ← Parallel by default
 │Contrarian│Pragmatist│Systems │  ← Isolated from main context
 │        │ │        │ │Thinker │
 └────┬───┘ └────┬───┘ └────┬───┘
@@ -36,50 +36,43 @@ You → /council Should I build or buy this feature?
 
 ## Agent Configuration
 
-The council dispatches to **three AI CLI tools** running in parallel. You choose which tools to use.
+The council dispatches to **three AI agents** via CLI commands. By default, all three use `claude -p` — it works out of the box with no extra installs. You can swap any agent for a different provider by editing the config table in the skill file.
 
-### Default Configuration
-
-The skill ships configured for three different LLMs to maximize perspective diversity:
+### Default (All Claude)
 
 | Agent | CLI Tool | Install |
 |-------|----------|---------|
-| Agent 1 | [OpenAI Codex CLI](https://github.com/openai/codex) | `npm install -g @openai/codex` |
-| Agent 2 | [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) | `npm install -g @google/gemini-cli` |
-| Agent 3 | [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) | Included with Claude Code |
+| Advisor 1 | Claude CLI | Included with Claude Code |
+| Advisor 2 | Claude CLI | Included with Claude Code |
+| Advisor 3 | Claude CLI | Included with Claude Code |
+
+The personas create meaningful diversity even with a single model — each agent gets a different role and system prompt. When all agents use the same label, the briefing shows **persona names only** (e.g., "The Contrarian", "The Pragmatist") for clean output.
+
+### Adding Other Models
+
+For maximum perspective diversity, swap in agents from different providers. Different models have different training data, reasoning patterns, and blind spots. Edit the Agent Configuration table at the top of `skills/council/SKILL.md` — there's a commented-out multi-provider block ready to uncomment.
+
+| Provider | Label | CLI Command | Install |
+|----------|-------|-------------|---------|
+| [OpenAI Codex](https://github.com/openai/codex) | `Codex (OpenAI)` | `echo "<PROMPT>" \| codex exec --skip-git-repo-check - 2>/dev/null` | `npm install -g @openai/codex` |
+| [Google Gemini](https://github.com/google-gemini/gemini-cli) | `Gemini (Google)` | `gemini -p '<PROMPT>' -o text 2>/dev/null` | `npm install -g @google/gemini-cli` |
+| [Ollama](https://ollama.ai) (local) | `Ollama (Local)` | `ollama run llama3 '<PROMPT>' 2>/dev/null` | [ollama.ai](https://ollama.ai) |
 
 Each CLI tool requires its own account and authentication. See their respective docs for setup.
 
-### Using Different Tools
+When you mix providers, the briefing automatically switches to **"Label as Persona"** format (e.g., "Codex (OpenAI) as The Contrarian") so you can tell which model said what. Consider using `--mode staggered` with mixed providers to avoid resource contention.
 
-The agents are defined by their CLI commands in `skills/council/SKILL.md`. You can swap any agent for a different tool by editing the dispatch commands:
+### Adding More Advisors
 
-```bash
-# Default: OpenAI Codex
-echo "<PROMPT>" | codex exec - 2>/dev/null
+The council supports more than 3 seats. Add rows to the Agent Configuration table and use `--seats N`:
 
-# Default: Google Gemini
-gemini -p '<PROMPT>' -o text 2>/dev/null
-
-# Default: Claude CLI
-claude -p '<PROMPT>' --no-session-persistence 2>/dev/null
 ```
-
-Replace any of these with whatever CLI tools you have available. Some options:
-
-- **Ollama** (local models): `ollama run llama3.1 "<PROMPT>"`
-- **Perplexity**: If a CLI becomes available
-- **Any LLM with a CLI interface**: As long as it accepts a prompt and returns text
-
-### Claude-Only Mode
-
-You don't need three different LLMs. If you only have Claude Code installed, you can run all three agents as separate Claude CLI calls — the personas will still create meaningful diversity since each agent gets a different role and system prompt. Edit the skill to use `claude -p` for all three dispatch commands. You'll lose the benefit of different model architectures producing genuinely different reasoning patterns, but the persona system still works.
+/council --seats 5 Should we rewrite the backend?
+```
 
 ### Minimum Requirements
 
-- **Claude Code** — Required. This is what runs the skills and acts as mediator.
-- **At least one other CLI tool** — The council needs agents to dispatch to. With only one tool, you'll get one perspective instead of three. The skill notes failures and proceeds with available agents.
-- **Best experience** — Three different CLI tools from different providers. Different models have different training data, reasoning patterns, and blind spots. That diversity is the whole point.
+- **Claude Code** — Required. This is what runs the skills and acts as mediator. No other tools needed for the default configuration.
 
 ## Installation
 
@@ -93,7 +86,7 @@ There are three ways to install. All support natural language triggering — say
 
 ### Plugin Install (Recommended)
 
-**Prerequisites:** You need at least one agent CLI tool installed and authenticated. See [Agent Configuration](#agent-configuration) above for setup instructions.
+**Prerequisites:** Just Claude Code. The default configuration uses `claude -p` for all three agents — no other tools needed.
 
 ```
 /plugin marketplace add Erreon/claude-council
@@ -146,19 +139,17 @@ mkdir -p ~/.claude/council/sessions
 mkdir -p ~/Documents/council
 ```
 
-**3. Install the CLI tools you want to use:**
+**3. (Optional) Install additional CLI tools:**
+
+The default config uses Claude CLI for all three agents. To add other providers, see [Adding Other Models](#adding-other-models) above, then install and authenticate each tool.
 
 ```bash
-# OpenAI Codex (requires OpenAI account)
+# OpenAI Codex (optional — requires OpenAI account)
 npm install -g @openai/codex
 
-# Google Gemini (requires Google AI account)
+# Google Gemini (optional — requires Google AI account)
 npm install -g @google/gemini-cli
-
-# Claude CLI is included with Claude Code
 ```
-
-**4. Authenticate each CLI tool** according to its own documentation.
 
 ### Windows
 
@@ -179,8 +170,6 @@ The council dispatches multiple CLI tools and manages session files, which can t
   "permissions": {
     "allow": [
       "Bash(python3 *council_cli*)",
-      "Bash(echo * | codex *)",
-      "Bash(gemini *)",
       "Bash(claude -p *)",
       "Bash(mkdir -p */.claude/council/*)",
       "Bash(mkdir -p */Documents/council*)"
@@ -189,9 +178,9 @@ The council dispatches multiple CLI tools and manages session files, which can t
 }
 ```
 
-These allow the council to dispatch agents and manage session directories without asking for approval each time. You may also want to add general-purpose entries like `Bash(git *)` and `Bash(gh *)` if you haven't already.
+If you add other providers, add their permissions too (e.g., `"Bash(echo * | codex *)"`, `"Bash(gemini *)"`, `"Bash(ollama *)"`). You may also want to add general-purpose entries like `"Bash(git *)"` and `"Bash(gh *)"` if you haven't already.
 
-> **⚠️ Security note:** These permissions allow Claude to send prompts to external AI services (OpenAI, Google, Anthropic) without asking for confirmation. The council skill is designed to never include sensitive data like API keys or credentials in agent prompts, but you should review the skill files if you have concerns. If you'd prefer to approve each dispatch manually, skip these settings — the council works fine without them, it just asks for permission before each agent call.
+> **⚠️ Security note:** These permissions allow Claude to send prompts to external AI services without asking for confirmation. The council skill is designed to never include sensitive data like API keys or credentials in agent prompts, but you should review the skill files if you have concerns. If you'd prefer to approve each dispatch manually, skip these settings — the council works fine without them, it just asks for permission before each agent call.
 
 ## Usage
 
@@ -217,15 +206,15 @@ The mediator will:
 
 **Dispatch mode** — Control how agents are launched:
 ```
-/council --mode parallel Should we use Redis?     # All 3 at once
-/council --mode staggered Should we use Redis?    # Codex+Gemini, then Claude (default)
+/council --mode parallel Should we use Redis?     # All 3 at once (default)
+/council --mode staggered Should we use Redis?    # Advisor 1+2, then Advisor 3
 /council --mode sequential Should we use Redis?   # One at a time
 ```
 
 | Mode | Behavior | Best for |
 |------|----------|----------|
-| **parallel** | All 3 agents simultaneously | Fast machines, short prompts |
-| **staggered** (default) | Codex + Gemini together, Claude after | Balanced — avoids heaviest overlap |
+| **parallel** (default) | All 3 agents simultaneously | Default — works well when all agents are the same CLI |
+| **staggered** | Advisor 1 + 2 together, Advisor 3 after | Mixed providers — avoids heaviest overlap |
 | **sequential** | One at a time | Slower machines, or when parallel locks up |
 
 **Fun mode** — Add chaotic energy:
@@ -423,20 +412,20 @@ Council dispatch runs inside a subagent, so only the final briefing (~300 words)
 
 ### Example Briefing Output
 
-Here's what a council briefing looks like. Each advisor tags claims by evidence level and ends with a concrete recommendation. The mediator synthesizes everything into a structured format:
+Here's what a council briefing looks like with the default all-Claude configuration. Since all agents use the same label, the briefing uses **persona names only**:
 
 ---
 
 **Council Briefing: Real-Time Updates for Small SaaS**
-*Personas: Codex as The Contrarian, Gemini as The Pragmatist, Claude as The Systems Thinker*
+*Personas: The Contrarian, The Pragmatist, The Systems Thinker*
 
-**Codex (OpenAI) as The Contrarian:** Challenges the assumption that real-time is even needed — most "real-time" features are fine with 5-second polling and the complexity cost of WebSockets is rarely justified at 500 users. RECOMMENDATION: I recommend starting with simple polling and only upgrading if users actually complain about latency.
+**The Contrarian:** Challenges the assumption that real-time is even needed — most "real-time" features are fine with 5-second polling and the complexity cost of WebSockets is rarely justified at 500 users. RECOMMENDATION: I recommend starting with simple polling and only upgrading if users actually complain about latency.
 
-**Gemini (Google) as The Pragmatist:** SSE is the pragmatic middle ground — simpler than WebSockets, built on HTTP, works through proxies, and handles the one-way server-to-client push that covers 90% of real-time use cases. RECOMMENDATION: I recommend SSE with a polling fallback for older clients.
+**The Pragmatist:** SSE is the pragmatic middle ground — simpler than WebSockets, built on HTTP, works through proxies, and handles the one-way server-to-client push that covers 90% of real-time use cases. RECOMMENDATION: I recommend SSE with a polling fallback for older clients.
 
-**Claude (Anthropic) as The Systems Thinker:** WebSockets create hidden operational complexity — connection state management, reconnection logic, load balancer configuration, and debugging becomes harder since traffic doesn't show up in standard HTTP logs. RECOMMENDATION: I recommend SSE for notifications and polling for data sync, avoiding WebSockets entirely at this scale.
+**The Systems Thinker:** WebSockets create hidden operational complexity — connection state management, reconnection logic, load balancer configuration, and debugging becomes harder since traffic doesn't show up in standard HTTP logs. RECOMMENDATION: I recommend SSE for notifications and polling for data sync, avoiding WebSockets entirely at this scale.
 
-**Evidence Audit:** All key claims grounded. Codex's "rarely justified" claim is [INFERRED] from scale analysis rather than benchmarked data, but the reasoning is sound.
+**Evidence Audit:** All key claims grounded. The Contrarian's "rarely justified" claim is [INFERRED] from scale analysis rather than benchmarked data, but the reasoning is sound.
 
 **What To Do Next:**
 - [ ] Prototype SSE for your highest-priority real-time feature (notifications or live updates) and measure actual latency
@@ -445,19 +434,39 @@ Here's what a council briefing looks like. Each advisor tags claims by evidence 
 
 **Disagreement Matrix:**
 
-| Topic | Codex (Contrarian) | Gemini (Pragmatist) | Claude (Systems Thinker) |
-|-------|-------------------|--------------------|--------------------|
+| Topic | The Contrarian | The Pragmatist | The Systems Thinker |
+|-------|----------------|----------------|---------------------|
 | Best approach | Polling is enough | SSE is the sweet spot | SSE + polling hybrid |
 | WebSockets | Overkill at this scale | Unnecessary complexity | Avoid entirely |
 | When to upgrade | Only if users complain | When you need bidirectional | Never at 500 users |
 
-The disagreement on polling vs SSE is genuine analytical divergence — Codex questions the premise while Gemini and Claude accept real-time is needed but differ on implementation.
+The disagreement on polling vs SSE is genuine analytical divergence — The Contrarian questions the premise while the others accept real-time is needed but differ on implementation.
 
 **Consensus:** All three advisors agree WebSockets are unnecessary at 500 users and would add complexity without meaningful benefit. The operational overhead (connection management, load balancer config, debugging) outweighs any latency advantage at this scale.
 
 **Key Tension:** Do you invest in SSE now (slightly more work upfront, cleaner real-time experience) or start with polling (faster to ship, but may need replacement later if latency matters)? This is a bet on whether your users will actually notice the difference between 200ms and 5s updates.
 
 ---
+
+<details>
+<summary><strong>Example with mixed providers</strong></summary>
+
+When different providers are configured, the briefing switches to **"Label as Persona"** format:
+
+---
+
+**Council Briefing: Real-Time Updates for Small SaaS**
+*Personas: Codex (OpenAI) as The Contrarian, Gemini (Google) as The Pragmatist, Claude (Anthropic) as The Systems Thinker*
+
+**Codex (OpenAI) as The Contrarian:** [position summary...]
+
+**Gemini (Google) as The Pragmatist:** [position summary...]
+
+**Claude (Anthropic) as The Systems Thinker:** [position summary...]
+
+---
+
+</details>
 
 ## CLI Helper (Optional)
 

@@ -7,6 +7,30 @@ description: Use when the user wants AI agents to debate a topic, argue for/agai
 
 Run a structured debate between AI agents where they respond to and challenge each other's arguments. The current Claude instance acts as neutral judge.
 
+## Agent Configuration
+
+| Slot | Label | CLI Command |
+|------|-------|-------------|
+| Advisor 1 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 2 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 3 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+
+<!-- Multi-provider alternative — uncomment this block and comment out the block above:
+| Slot | Label | CLI Command |
+|------|-------|-------------|
+| Advisor 1 | Codex (OpenAI) | `echo "<PROMPT>" \| codex exec --skip-git-repo-check - 2>/dev/null` |
+| Advisor 2 | Gemini (Google) | `gemini -p '<PROMPT>' -o text 2>/dev/null` |
+| Advisor 3 | Claude (Anthropic) | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+-->
+
+To use different models, replace the label and command for any row. See the main council skill for more examples.
+
+### Labeling Logic
+
+Before producing the verdict, check the Agent Configuration table above:
+- If **all three labels are identical** → use **role names only** (e.g., "Position A debater", "Independent analyst")
+- If **labels differ** → use **"Label as Role"** format (e.g., "Codex (OpenAI) arguing Position A")
+
 ## When to Use
 
 - The user is leaning toward a decision and wants it stress-tested
@@ -37,24 +61,11 @@ Do NOT ask the user to confirm. Just dispatch immediately.
 
 ### 2. Round 1 — Opening Arguments
 
-Dispatch all three agents in parallel. Assign two to argue opposing positions, and one as an independent analyst.
+Dispatch all three agents in parallel using the CLI commands from the **Agent Configuration** table at the top. Assign two to argue opposing positions, and one as an independent analyst.
 
-**Position A debater — one of: Codex, Gemini, or Claude CLI** (vary across invocations)
-**Position B debater — another of the three**
-**Independent analyst — the remaining agent**
-
-CLI commands:
-
-```bash
-# Codex
-echo "<PROMPT>" | codex exec - 2>/dev/null
-
-# Gemini
-gemini -p '<PROMPT>' -o text 2>/dev/null
-
-# Claude
-claude -p '<PROMPT>' --no-session-persistence 2>/dev/null
-```
+**Position A debater — Advisor 1** (or vary across invocations)
+**Position B debater — Advisor 2**
+**Independent analyst — Advisor 3**
 
 **Debater prompt template (Position A and B):**
 
@@ -175,24 +186,29 @@ After the verdict (and after each optional Round 3), save a JSON checkpoint to `
   "question": "The original user topic",
   "date": "YYYY-MM-DD",
   "positions": {
-    "a": { "label": "Position A description", "agent": "codex" },
-    "b": { "label": "Position B description", "agent": "gemini" }
+    "a": { "label": "Position A description", "agent": "advisor_1" },
+    "b": { "label": "Position B description", "agent": "advisor_2" }
   },
-  "analyst": "claude",
+  "analyst": "advisor_3",
+  "labels": {
+    "advisor_1": "Claude",
+    "advisor_2": "Claude",
+    "advisor_3": "Claude"
+  },
   "rounds": [
     {
       "round": 1,
       "label": "Opening arguments",
-      "codex": "Full response text",
-      "gemini": "Full response text",
-      "claude": "Full response text"
+      "advisor_1": "Full response text",
+      "advisor_2": "Full response text",
+      "advisor_3": "Full response text"
     },
     {
       "round": 2,
       "label": "Rebuttals",
-      "codex": "Full response text",
-      "gemini": "Full response text",
-      "claude": "Full response text"
+      "advisor_1": "Full response text",
+      "advisor_2": "Full response text",
+      "advisor_3": "Full response text"
     }
   ],
   "verdict": "The full verdict text from the judge",

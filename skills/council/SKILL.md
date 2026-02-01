@@ -5,7 +5,36 @@ description: Use when the user wants multiple AI perspectives on a decision, arc
 
 # Council
 
-Consult three external AI agents (Codex, Gemini, Claude) for independent perspectives — each assigned a distinct persona — then synthesize their responses into an actionable briefing that preserves disagreement, surfaces tensions, and gives the user concrete next steps. The mediator has institutional memory and weights past sessions by user ratings.
+Consult three external AI agents for independent perspectives — each assigned a distinct persona — then synthesize their responses into an actionable briefing that preserves disagreement, surfaces tensions, and gives the user concrete next steps. The mediator has institutional memory and weights past sessions by user ratings.
+
+## Agent Configuration
+
+| Slot | Label | CLI Command |
+|------|-------|-------------|
+| Advisor 1 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 2 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 3 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+
+<!-- Multi-provider alternative — uncomment this block and comment out the block above:
+| Slot | Label | CLI Command |
+|------|-------|-------------|
+| Advisor 1 | Codex (OpenAI) | `echo "<PROMPT>" \| codex exec --skip-git-repo-check - 2>/dev/null` |
+| Advisor 2 | Gemini (Google) | `gemini -p '<PROMPT>' -o text 2>/dev/null` |
+| Advisor 3 | Claude (Anthropic) | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+-->
+
+To use different models, replace the label and command for any row. Examples:
+- Codex: Label `Codex (OpenAI)`, Command `echo "<PROMPT>" | codex exec --skip-git-repo-check - 2>/dev/null`
+- Gemini: Label `Gemini (Google)`, Command `gemini -p '<PROMPT>' -o text 2>/dev/null`
+- Ollama: Label `Ollama (Local)`, Command `ollama run llama3 '<PROMPT>' 2>/dev/null`
+
+To add more advisors, add more rows (Advisor 4, Advisor 5, etc.) and use `--seats N` to match. The dispatch, synthesis, and JSON checkpoint will adapt automatically.
+
+### Labeling Logic
+
+Before producing the briefing, check the Agent Configuration table above:
+- If **all three labels are identical** (e.g., all "Claude") → use **persona names only** in the briefing (e.g., "The Contrarian", "The Pragmatist")
+- If **labels differ** → use **"Label as Persona"** format (e.g., "Codex (OpenAI) as The Contrarian", "Gemini (Google) as The Pragmatist")
 
 ## When to Use
 
@@ -116,7 +145,7 @@ When manually specified, use exactly those personas. No substitution. Fun person
 /council --fun What database should I use?
 ```
 
-Might produce: Codex as The Contrarian, Gemini as The Time Traveler, Claude as The Pragmatist.
+Might produce: Advisor 1 as The Contrarian, Advisor 2 as The Time Traveler, Advisor 3 as The Pragmatist.
 
 ### Dispatch Mode
 
@@ -130,13 +159,13 @@ Controls how agents are launched. Can be specified with `--mode`:
 
 | Mode | Behavior | Best for |
 |------|----------|----------|
-| **parallel** | All 3 agents launch simultaneously | Fast machines, short prompts |
-| **staggered** (default) | Codex + Gemini launch together, Claude launches after they finish | Balanced — avoids the heaviest overlap |
-| **sequential** | Agents launch one at a time (Codex → Gemini → Claude) | Slow machines, or when parallel is locking up |
+| **parallel** (default) | All 3 agents launch simultaneously | Default — works well when all agents are the same CLI |
+| **staggered** | Advisor 1 + Advisor 2 launch together, Advisor 3 launches after they finish | Mixed providers — avoids the heaviest overlap |
+| **sequential** | Agents launch one at a time (Advisor 1 → Advisor 2 → Advisor 3) | Slow machines, or when parallel is locking up |
 
-Default is **staggered** because the `claude` CLI is the heaviest process and most likely to timeout when competing for resources.
+Default is **parallel**. If you configure mixed providers (e.g., Codex + Gemini + Claude), consider using `--mode staggered` to avoid resource contention.
 
-**Each agent gets ONE persona per session.** Assign them round-robin (Codex gets persona 1, Gemini gets persona 2, Claude gets persona 3). Note the assignment in the briefing header so the user knows who played what role.
+**Each agent gets ONE persona per session.** Assign them round-robin (Advisor 1 gets persona 1, Advisor 2 gets persona 2, Advisor 3 gets persona 3). Note the assignment in the briefing header so the user knows who played what role.
 
 ## Flow
 
@@ -182,27 +211,12 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
 
 0. Run `mkdir -p ~/.claude/council/sessions && mkdir -p ~/Documents/council` first to ensure save directories exist (silent no-op if they already exist)
 
-1. Run the three agents according to the **dispatch mode** (default: staggered):
-
-   **Codex (OpenAI):**
-   ```bash
-   echo "<PROMPT>" | codex exec --skip-git-repo-check - 2>/dev/null
-   ```
-
-   **Gemini (Google):**
-   ```bash
-   gemini -p '<PROMPT>' -o text 2>/dev/null
-   ```
-
-   **Claude (Anthropic):**
-   ```bash
-   claude -p '<PROMPT>' --no-session-persistence 2>/dev/null
-   ```
+1. Run the three agents according to the **dispatch mode** (default: parallel), using the CLI commands from the **Agent Configuration** table at the top of this file. Replace `<PROMPT>` with the built prompt for each advisor.
 
    **Dispatch modes:**
-   - **parallel**: Launch all 3 Bash calls simultaneously
-   - **staggered** (default): Launch Codex + Gemini in parallel, wait for both to finish, then launch Claude alone
-   - **sequential**: Launch Codex, wait for it to finish, then Gemini, wait, then Claude
+   - **parallel** (default): Launch all 3 Bash calls simultaneously
+   - **staggered**: Launch Advisor 1 + Advisor 2 in parallel, wait for both to finish, then launch Advisor 3 alone
+   - **sequential**: Launch Advisor 1, wait for it to finish, then Advisor 2, wait, then Advisor 3
 
 2. Synthesize the three responses — preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average)
 
@@ -251,8 +265,8 @@ PREVIOUS QUESTION: [original question]
 YOUR PREVIOUS POSITION: [summary of this agent's last response]
 
 THE OTHER ADVISORS SAID:
-- [Agent 2 name] as [Persona]: [summary of their position]
-- [Agent 3 name] as [Persona]: [summary of their position]
+- [Advisor 2 label/persona]: [summary of their position]
+- [Advisor 3 label/persona]: [summary of their position]
 
 THE MEDIATOR SAID: [mediator's synthesis from the briefing]
 
@@ -270,14 +284,16 @@ End with a single sentence starting with "RECOMMENDATION: I recommend..." that c
 ---
 
 **Council Briefing: [Topic]**
-*Personas: Codex as [Persona], Gemini as [Persona], Claude as [Persona]*
+
+Apply the **Labeling Logic** from the Agent Configuration section:
+- If all labels are the same → *Personas: [Persona 1], [Persona 2], [Persona 3]*
+- If labels differ → *Personas: [Label 1] as [Persona 1], [Label 2] as [Persona 2], [Label 3] as [Persona 3]*
+
 [*Prior context: On [date], the council discussed "[topic]" — [1 sentence outcome]*]  ← only if historian found relevant history
 
-**Codex (OpenAI) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
-
-**Gemini (Google) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
-
-**Claude (Anthropic) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
+For each advisor, use the appropriate header:
+- Same labels → **[Persona]:** [2-3 sentence summary + RECOMMENDATION]
+- Different labels → **[Label] as [Persona]:** [2-3 sentence summary + RECOMMENDATION]
 
 **Evidence Audit:** [If any consensus point or action item rests primarily on [SPECULATIVE] claims from multiple advisors, flag it here: "⚠ [topic] — consensus is speculative (no advisor provided anchored evidence)." If all key claims are anchored or inferred, write "All key claims grounded." Keep to 1-2 sentences.]
 
@@ -290,7 +306,9 @@ These should be the 2-3 things the user should actually do based on the council'
 
 **Disagreement Matrix:**
 
-| Topic | Codex ([Persona]) | Gemini ([Persona]) | Claude ([Persona]) |
+Use persona names (or "Label (Persona)" if labels differ) as column headers:
+
+| Topic | [Advisor 1 header] | [Advisor 2 header] | [Advisor 3 header] |
 |-------|-------------------|--------------------|--------------------|
 | [Key issue 1] | [2-5 word position] | [2-5 word position] | [2-5 word position] |
 | [Key issue 2] | [position] | [position] | [position] |
@@ -331,7 +349,7 @@ This keeps the council conversational while keeping all raw responses out of the
 When the user's follow-up references a specific section of the briefing — a disagreement row, the key tension, an action item, or an individual advisor's position — treat it as a **targeted drill-down** rather than a full re-dispatch:
 
 - **"Tell me more about the key tension"** or **"Expand on action item 2"** → Ask all three advisors to elaborate specifically on that point, staying in persona. The follow-up prompt should quote the relevant section and ask for deeper analysis.
-- **"I disagree with Codex on [topic]"** or **"Why does Gemini think X?"** → Route to only that advisor for a deeper explanation. Other advisors can optionally respond if the mediator judges their perspective is relevant.
+- **"I disagree with Advisor 1 on [topic]"** or **"Why does Advisor 2 think X?"** → Route to only that advisor for a deeper explanation. Other advisors can optionally respond if the mediator judges their perspective is relevant.
 - **"Debate the key tension"** → Escalate to `/council-debate` with the tension as the motion. Suggest this option but don't auto-escalate.
 
 The drill-down follow-up uses the same subagent dispatch and JSON checkpoint flow. The difference is in the prompt framing — targeted prompts produce more focused, useful responses than repeating the full question.
@@ -361,9 +379,14 @@ After every synthesis (initial briefing or follow-up round), save a JSON checkpo
   "question": "The original user question",
   "date": "YYYY-MM-DD",
   "personas": {
-    "codex": "The Contrarian",
-    "gemini": "The Pragmatist",
-    "claude": "The User Advocate"
+    "advisor_1": "The Contrarian",
+    "advisor_2": "The Pragmatist",
+    "advisor_3": "The User Advocate"
+  },
+  "labels": {
+    "advisor_1": "Claude",
+    "advisor_2": "Claude",
+    "advisor_3": "Claude"
   },
   "prior_context": "Reference to related past session, if any (null if none)",
   "rating": null,
@@ -371,18 +394,18 @@ After every synthesis (initial briefing or follow-up round), save a JSON checkpo
   "rounds": [
     {
       "round": 1,
-      "codex": "Full codex response text",
-      "gemini": "Full gemini response text",
-      "claude": "Full claude response text",
+      "advisor_1": "Full advisor 1 response text",
+      "advisor_2": "Full advisor 2 response text",
+      "advisor_3": "Full advisor 3 response text",
       "synthesis": "The full mediator synthesis text",
       "user_followup": null
     },
     {
       "round": 2,
       "user_followup": "What the user said",
-      "codex": "Full codex response text",
-      "gemini": "Full gemini response text",
-      "claude": "Full claude response text",
+      "advisor_1": "Full advisor 1 response text",
+      "advisor_2": "Full advisor 2 response text",
+      "advisor_3": "Full advisor 3 response text",
       "synthesis": "The full mediator synthesis text"
     }
   ],
