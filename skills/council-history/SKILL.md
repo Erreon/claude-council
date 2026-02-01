@@ -12,11 +12,33 @@ Browse, recap, archive, and clean up saved council sessions.
 - **Working data (JSON):** `~/.claude/council/sessions/` — auto-saved checkpoints from every council session. Contains full agent responses, metadata, and round history.
 - **Archive (Markdown):** `~/Documents/council/` — permanently saved sessions the user explicitly chose to keep. Human-readable, shareable.
 
+## CLI Acceleration (Optional)
+
+The council CLI helper can handle session operations directly. Detect availability once at the start:
+
+```bash
+if [ -n "$CLAUDE_PLUGIN_ROOT" ] && python3 "$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py"
+elif python3 "$HOME/.claude/skills/council/council_cli.py" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$HOME/.claude/skills/council/council_cli.py"
+else
+    COUNCIL_CLI=""
+fi
+```
+
+**CLI paths:**
+- **List sessions:** `python3 "$COUNCIL_CLI" session list`
+- **Load session:** `python3 "$COUNCIL_CLI" session load --id "SESSION_ID"`
+- **Rate session:** `python3 "$COUNCIL_CLI" session rate --id "SESSION_ID" --rating N`
+- **Annotate outcome:** `python3 "$COUNCIL_CLI" session outcome --id "SESSION_ID" --status "..." --note "..."`
+
 ## Flow
 
 ### 1. List Sessions
 
-Read all JSON files from `~/.claude/council/sessions/` and present a summary table:
+**If CLI available:** `python3 "$COUNCIL_CLI" session list` — returns JSON with a `sessions` array. Format into the table below.
+
+**Otherwise:** Read all JSON files from `~/.claude/council/sessions/` and present a summary table:
 
 ```
 | # | Date       | Topic                        | Rounds | Archived |

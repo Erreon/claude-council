@@ -16,9 +16,22 @@ Run a structured debate between AI agents where they respond to and challenge ea
 
 ## Flow
 
+### 0. Historian Check
+
+Before framing the debate, check for relevant past council sessions or debates:
+
+**If CLI available:**
+```bash
+python3 "$COUNCIL_CLI" historian --question "the debate topic"
+```
+
+**Otherwise:** Scan `~/.claude/council/sessions/` for related topics.
+
+If a related session or debate exists, note it when framing the debate so agents have that context. Don't force connections where there aren't any.
+
 ### 1. Frame the Debate
 
-Take the user's topic and define two clear positions. If the user has a lean, assign the opposing position to be argued as well. Craft the prompt with enough context for agents with no conversation history.
+Take the user's topic and define two clear positions. If the user has a lean, assign the opposing position to be argued as well. Craft the prompt with enough context for agents with no conversation history. If the historian found relevant prior context, include it in the agent prompts.
 
 Do NOT ask the user to confirm. Just dispatch immediately.
 
@@ -141,6 +154,79 @@ The current Claude instance (you) acts as **neutral judge**. Present the debate 
 ### 5. Optional: Round 3
 
 If the user wants to go deeper, run a final round where each debater gives a 200-word closing statement incorporating the rebuttals. Then re-synthesize.
+
+## Saving Results
+
+Debate sessions save to the same location as council sessions so the historian can find them and `/council-history` can list them.
+
+**Before writing any file**, always run `mkdir -p ~/.claude/council/sessions && mkdir -p ~/Documents/council` first.
+
+After the verdict (and after each optional Round 3), save a JSON checkpoint to `~/.claude/council/sessions/`:
+
+**Filename:** `YYYY-MM-DD-HH-MM-[slug].json`
+
+**Structure:**
+
+```json
+{
+  "id": "YYYY-MM-DD-HH-MM-slug",
+  "type": "debate",
+  "topic": "Short topic title",
+  "question": "The original user topic",
+  "date": "YYYY-MM-DD",
+  "positions": {
+    "a": { "label": "Position A description", "agent": "codex" },
+    "b": { "label": "Position B description", "agent": "gemini" }
+  },
+  "analyst": "claude",
+  "rounds": [
+    {
+      "round": 1,
+      "label": "Opening arguments",
+      "codex": "Full response text",
+      "gemini": "Full response text",
+      "claude": "Full response text"
+    },
+    {
+      "round": 2,
+      "label": "Rebuttals",
+      "codex": "Full response text",
+      "gemini": "Full response text",
+      "claude": "Full response text"
+    }
+  ],
+  "verdict": "The full verdict text from the judge",
+  "archived": false
+}
+```
+
+Use the Write tool to save/update this file after the verdict. If the user requests Round 3, read the existing file, append the round, update the verdict, and re-save.
+
+### CLI Acceleration (Optional)
+
+If the council CLI helper is available, use it for session creation and historian checks:
+
+```bash
+if [ -n "$CLAUDE_PLUGIN_ROOT" ] && python3 "$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py"
+elif python3 "$HOME/.claude/skills/council/council_cli.py" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$HOME/.claude/skills/council/council_cli.py"
+else
+    COUNCIL_CLI=""
+fi
+```
+
+**If CLI available:**
+```bash
+# Check for related past sessions/debates before starting
+python3 "$COUNCIL_CLI" historian --question "the debate topic"
+
+# Create session after verdict
+python3 "$COUNCIL_CLI" session create --question "the topic" --topic "short topic" --personas-json '{"type":"debate","positions":{"a":{"label":"...","agent":"codex"},"b":{"label":"...","agent":"gemini"}},"analyst":"claude"}'
+
+# Append round data
+echo '{"label":"Opening arguments","codex":"...","gemini":"...","claude":"..."}' | python3 "$COUNCIL_CLI" session append --id "SESSION_ID" --stdin
+```
 
 ## Position Assignment
 

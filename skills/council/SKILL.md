@@ -15,6 +15,39 @@ Consult three external AI agents (Codex, Gemini, Claude) for independent perspec
 - Brainstorming where diverse perspectives add value
 - Any time the user explicitly asks for council input
 
+## CLI Acceleration (Optional)
+
+A Python CLI helper (`council_cli.py`) can offload deterministic logic (parsing, persona assignment, prompt building, session management) to save tokens and improve consistency. It lives alongside this skill file.
+
+**Detection — run this once at the start of every `/council` session:**
+
+```bash
+# Check plugin location first, then manual install location
+if [ -n "$CLAUDE_PLUGIN_ROOT" ] && python3 "$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py"
+elif python3 "$HOME/.claude/skills/council/council_cli.py" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$HOME/.claude/skills/council/council_cli.py"
+else
+    COUNCIL_CLI=""
+fi
+```
+
+If `COUNCIL_CLI` is set, use the CLI paths described in each step below. If empty, follow the existing prose instructions — the skill works identically without the CLI.
+
+**CLI paths by step:**
+
+- **Step 0 (Historian):** `python3 "$COUNCIL_CLI" historian --question "..."`
+- **Step 1 (Parse):** `python3 "$COUNCIL_CLI" parse --raw "/council ..."`
+- **Step 1 (Assign):** `python3 "$COUNCIL_CLI" assign --question "..." [--personas "X,Y,Z"] [--fun]`
+- **Step 1 (Prompt):** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."]` (repeat per agent)
+- **Follow-up prompts:** `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."`
+- **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --stdin`
+- **Session create:** `python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'`
+- **Session append:** `echo '{...}' | python3 "$COUNCIL_CLI" session append --id "..." --stdin`
+- **Similarity check:** `echo '{...}' | python3 "$COUNCIL_CLI" similarity --stdin`
+- **Rating:** `python3 "$COUNCIL_CLI" session rate --id "..." --rating N`
+- **Outcome:** `python3 "$COUNCIL_CLI" session outcome --id "..." --status "..." --note "..."`
+
 ## Personas
 
 Each council member is assigned a persona that shapes how they approach the question. This creates structural diversity — productive friction by design, not by accident.
