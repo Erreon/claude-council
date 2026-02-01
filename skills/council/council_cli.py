@@ -174,10 +174,11 @@ TOPIC_KEYWORDS = {
         "city guide", "sightseeing", "layover", "weekend getaway",
     ],
     "food_drink": [
-        "restaurant", "food", "dining", "chef", "cuisine", "recipe",
-        "cooking", "meal", "bar", "cocktail", "wine", "coffee", "cafe",
-        "brunch", "dinner", "tasting", "reservation", "michelin",
-        "street food", "brewery", "distillery", "bakery", "menu",
+        "restaurant", "food", "dining", "eat", "eating", "chef", "cuisine",
+        "recipe", "cooking", "meal", "bar", "cocktail", "wine", "coffee",
+        "cafe", "brunch", "dinner", "lunch", "breakfast", "tasting",
+        "reservation", "michelin", "street food", "brewery", "distillery",
+        "bakery", "menu",
     ],
     "home_life": [
         "pet", "dog", "cat", "puppy", "kitten", "garden", "gardening",
@@ -505,8 +506,12 @@ def cmd_assign(args):
                 personas.append(pname)
             else:
                 err(f"unknown persona: {n}")
+    elif args.topic and args.topic in TOPIC_TO_PERSONAS:
+        # LLM-provided topic classification — use directly
+        topic = args.topic
+        personas = list(TOPIC_TO_PERSONAS[topic])
     else:
-        # Auto-assign based on topic
+        # Fallback: keyword-based auto-assign
         scores = {}
         for category, keywords in TOPIC_KEYWORDS.items():
             score = sum(1 for kw in keywords if kw in question)
@@ -1153,6 +1158,7 @@ def main():
     p_assign = subparsers.add_parser("assign", help="Assign personas to agents")
     p_assign.add_argument("--question", required=True)
     p_assign.add_argument("--personas", default=None, help="Comma-separated persona names")
+    p_assign.add_argument("--topic", default=None, help="LLM-classified topic (e.g. food_drink, travel, architecture). Skips keyword matching.")
     p_assign.add_argument("--fun", action="store_true")
     p_assign.add_argument("--seats", type=int, default=3)
 

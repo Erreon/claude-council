@@ -88,7 +88,7 @@ If `COUNCIL_CLI` is set, use the CLI paths described in each step below. If empt
 
 - **Step 0 (Historian):** `python3 "$COUNCIL_CLI" historian --question "..."`
 - **Step 1 (Parse):** `python3 "$COUNCIL_CLI" parse --raw "/council ..."`
-- **Step 1 (Assign):** `python3 "$COUNCIL_CLI" assign --question "..." [--personas "X,Y,Z"] [--fun]`
+- **Step 1 (Assign):** `python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]`
 - **Step 1 (Prompt):** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."]` (repeat per agent)
 - **Follow-up prompts:** `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."`
 - **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" --stdin`
@@ -236,6 +236,26 @@ This gives the council institutional memory — agents can build on, challenge, 
 ### 1. Frame the Question
 
 Take the user's question or topic and craft a clear, self-contained prompt. The prompt must include enough context that an agent with no prior conversation history can give a useful answer. If the question is about code, read relevant files and include their contents or summaries in the prompt.
+
+**Classify the topic yourself** before assigning personas. You (the mediator LLM) understand intent far better than keyword matching. Pick the best-fit topic from this list and pass it via `--topic` when calling the CLI's `assign` command:
+
+| Topic key | Use when the question is about... |
+|-----------|----------------------------------|
+| `architecture` | System design, infrastructure, databases, APIs, deployment |
+| `product` | Features, UX, onboarding, design, MVPs, roadmaps |
+| `business` | Pricing, revenue, funding, hiring, contracts, compliance |
+| `personal` | Career, life decisions, relationships, freelancing |
+| `travel` | Trips, destinations, itineraries, hotels, sightseeing |
+| `food_drink` | Restaurants, dining, cooking, bars, coffee, cuisine |
+| `home_life` | Pets, gardening, home improvement, DIY, decor |
+| `wellness` | Fitness, health, meditation, sleep, nutrition, mental health |
+| `personal_finance` | Budgeting, investing, retirement, taxes, insurance |
+| `learning` | Courses, skills, certifications, hobbies, creative pursuits |
+| `marketing` | Growth, SEO, content, social media, branding, launches |
+| `debugging` | Bugs, errors, crashes, performance issues, stuck |
+| `strategic` | Vision, direction, pivots, competitive positioning, long-term |
+
+If the question spans multiple categories, pick the dominant one. The CLI will fall back to keyword matching if `--topic` is omitted, but LLM classification is preferred.
 
 Select personas (automatic or from manual override) and note the assignments.
 
