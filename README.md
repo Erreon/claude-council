@@ -358,6 +358,9 @@ Each council member gets assigned a persona that shapes their analysis. Personas
 | **The Radical** | Kill the feature, pivot, start over, delete the code | Strategic pivots, when stuck |
 | **The Craftsperson** | Quality, maintainability, argues for the harder-but-better path | Code quality, tech debt |
 | **The Visionary** | Long-horizon thinking, bigger picture, 1-2 year view | Product roadmap, strategy |
+| **The Curator** | Opinionated, taste-driven, specific ranked picks. Allergic to generic top-10 lists. | Food, drink, travel, recommendations |
+| **The Insider** | Deep domain/local knowledge. Knows what's real vs. hype, what locals actually do. | Travel, food, local exploration |
+| **The Experience Designer** | Thinks about the full arc — timing, pairings, atmosphere, transitions. | Itineraries, dining, events, gift-giving |
 
 ### Auto-Assignment
 
@@ -368,10 +371,16 @@ The mediator picks personas based on topic:
 | Architecture/technical | Contrarian + Pragmatist + Systems Thinker |
 | Product/features | Contrarian + User Advocate + Growth Hacker |
 | Business/pricing | Contrarian + Economist + Risk Analyst |
-| Personal/life decisions | Contrarian + Pragmatist + Outsider |
+| Career/life decisions | Contrarian + Pragmatist + Outsider |
 | Marketing/growth | Contrarian + User Advocate + Growth Hacker |
 | Debugging/stuck | Contrarian + Pragmatist + Systems Thinker |
 | Strategic/big-picture | Contrarian + Visionary + Radical |
+| Travel | Contrarian + Insider + Experience Designer |
+| Food/drink | Contrarian + Curator + Insider |
+| Home/pets/garden | Contrarian + Pragmatist + Craftsperson |
+| Wellness/fitness | Contrarian + Pragmatist + Outsider |
+| Personal finance | Contrarian + Economist + Risk Analyst |
+| Learning/skill-building | Contrarian + Outsider + Pragmatist |
 
 ### Fun Personas
 
@@ -443,6 +452,11 @@ Council dispatch runs inside a subagent, so only the final briefing (~300 words)
 **Personal decision:**
 ```
 /council Should I quit my job to go full-time on my side project? I have 8 months of savings.
+```
+
+**Lifestyle/recommendations:**
+```
+/council Best high-end restaurants in New Orleans for a long weekend trip?
 ```
 
 **Stress-test a plan:**

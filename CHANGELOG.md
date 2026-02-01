@@ -143,6 +143,48 @@ New lightweight skill — no dispatch, no agents. Prints a cheat sheet covering 
 
 ---
 
+## Lifestyle Topics & New Personas — v1.3.0
+
+The council was built for technical and business decisions, but users started asking it about restaurants, travel itineraries, puppy training, and workout routines. These all fell into the catch-all "personal" bucket and got assigned Contrarian + Pragmatist + Outsider — personas designed for career/life decisions, not for recommending a weekend in Portland.
+
+### New Topic Categories
+
+Broke the old "personal" category into meaningful lifestyle buckets:
+
+- **travel** — trips, destinations, itineraries, hotels, road trips
+- **food_drink** — restaurants, cuisine, bars, coffee, recipes, reservations
+- **home_life** — pets, gardening, home improvement, decor, DIY
+- **wellness** — fitness, nutrition, meditation, mental health, sleep
+- **personal_finance** — budgeting, investing, retirement, debt, taxes
+- **learning** — courses, certifications, hobbies, reading lists, skill-building
+
+The original "personal" category is now narrowed to career and life decisions (quit your job, relocate, freelance vs full-time). Keywords that belonged in the new categories were moved out.
+
+### New Specialist Personas
+
+Three new personas designed for experiential and recommendation queries:
+
+- **The Curator** — Opinionated and taste-driven. Makes specific, ranked picks with clear reasoning. Allergic to generic top-10 lists and tourist-trap recommendations. Auto-assigned for food, drink, travel, and entertainment queries.
+- **The Insider** — Deep domain and local knowledge. Knows what's real vs. hype, what locals actually do, and what the algorithms won't surface. Seasonal and context-aware. Auto-assigned for travel, food, and local exploration.
+- **The Experience Designer** — Thinks about the full arc of an experience — timing, pairings, atmosphere, transitions. Not just what to do, but how to sequence it for maximum impact. Auto-assigned for itineraries, dining, events, and gift-giving.
+
+### Topic-to-Persona Mappings
+
+Each new category gets its own persona triple:
+
+| Topic | Personas |
+|-------|----------|
+| Travel | Contrarian + Insider + Experience Designer |
+| Food/drink | Contrarian + Curator + Insider |
+| Home/pets/garden | Contrarian + Pragmatist + Craftsperson |
+| Wellness/fitness | Contrarian + Pragmatist + Outsider |
+| Personal finance | Contrarian + Economist + Risk Analyst |
+| Learning | Contrarian + Outsider + Pragmatist |
+
+This means "best high-end restaurants in New Orleans" now gets a Curator and an Insider instead of a Pragmatist and an Outsider — personas that actually know how to think about food recommendations.
+
+---
+
 ## What's Next
 
 Open areas for future work:

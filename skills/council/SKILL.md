@@ -140,6 +140,9 @@ Each council member is assigned a persona that shapes how they approach the ques
 | **The Radical** | Proposes the uncomfortable option. Kill the feature. Pivot entirely. Start over. Delete the code. | Strategic pivots, when stuck, major decisions |
 | **The Craftsperson** | Cares about quality, maintainability, and doing it right. Will argue for the harder path if it's the better path. | Code quality, tech debt, long-term architecture |
 | **The Visionary** | Long-horizon thinking. Where does this lead in 1-2 years? What's the bigger picture? | Product roadmap, strategic direction |
+| **The Curator** | Opinionated and taste-driven. Makes specific, ranked picks with clear reasoning. Allergic to generic top-10 lists and tourist-trap recommendations. | Food, drink, travel, entertainment, any recommendation query |
+| **The Insider** | Deep domain and local knowledge. Knows what's real vs. hype, what locals actually do, and what the algorithms won't surface. Seasonal and context-aware. | Travel, food, local exploration, niche hobbies |
+| **The Experience Designer** | Thinks about the full arc of an experience — timing, pairings, atmosphere, transitions. Not just what to do, but how to sequence it for maximum impact. | Travel itineraries, dining, events, gift-giving |
 
 **Fun personas** (never auto-assigned — activated with `--fun` or manual `--personas` override):
 
@@ -161,10 +164,16 @@ These personas add chaos, humor, or adversarial energy. They still try to be *us
 - Architecture/technical questions → Contrarian + Pragmatist + Systems Thinker
 - Product/feature questions → Contrarian + User Advocate + Growth Hacker
 - Business/pricing questions → Contrarian + Economist + Risk Analyst
-- Personal/life decisions → Contrarian + Pragmatist + Outsider
+- Career/life decisions → Contrarian + Pragmatist + Outsider
 - Marketing/growth questions → Contrarian + User Advocate + Growth Hacker
 - Debugging/stuck → Contrarian + Pragmatist + Systems Thinker
 - Strategic/big-picture → Contrarian + Visionary + Radical
+- Travel questions → Contrarian + Insider + Experience Designer
+- Food/drink recommendations → Contrarian + Curator + Insider
+- Home/pet/garden questions → Contrarian + Pragmatist + Craftsperson
+- Wellness/fitness questions → Contrarian + Pragmatist + Outsider
+- Personal finance questions → Contrarian + Economist + Risk Analyst
+- Learning/skill-building → Contrarian + Outsider + Pragmatist
 
 If the topic spans multiple categories, mix accordingly. Use judgment.
 
@@ -251,9 +260,9 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
 1. Run the three agents according to the **dispatch mode** (default: parallel), using the CLI commands from the **Agent Configuration** table at the top of this file. Replace `<PROMPT>` with the built prompt for each advisor.
 
    **Dispatch modes:**
-   - **parallel** (default): Launch all 3 Bash calls simultaneously
-   - **staggered**: Launch Advisor 1 + Advisor 2 in parallel, wait for both to finish, then launch Advisor 3 alone
-   - **sequential**: Launch Advisor 1, wait for it to finish, then Advisor 2, wait, then Advisor 3
+   - **parallel** (default): Launch all 3 Bash calls as **foreground** parallel calls in a single message (multiple Bash tool calls without `run_in_background`). Do NOT use background tasks — background task completion notifications leak to the main conversation and create noise after the briefing is delivered.
+   - **staggered**: Launch Advisor 1 + Advisor 2 as foreground parallel calls in one message, wait for both to finish, then launch Advisor 3 alone as a foreground call
+   - **sequential**: Launch Advisor 1, wait for it to finish, then Advisor 2, wait, then Advisor 3. All foreground calls.
 
 2. Synthesize the three responses — preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average)
 

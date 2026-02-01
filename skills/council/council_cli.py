@@ -91,6 +91,21 @@ SPECIALIST_PERSONAS = {
         "auto_assign": "Product roadmap, strategic direction",
         "type": "specialist",
     },
+    "The Curator": {
+        "description": "Opinionated and taste-driven. Makes specific, ranked picks with clear reasoning. Allergic to generic top-10 lists and tourist-trap recommendations.",
+        "auto_assign": "Food, drink, travel, entertainment, any recommendation query",
+        "type": "specialist",
+    },
+    "The Insider": {
+        "description": "Deep domain and local knowledge. Knows what's real vs. hype, what locals actually do, and what the algorithms won't surface. Seasonal and context-aware.",
+        "auto_assign": "Travel, food, local exploration, niche hobbies",
+        "type": "specialist",
+    },
+    "The Experience Designer": {
+        "description": "Thinks about the full arc of an experience — timing, pairings, atmosphere, transitions. Not just what to do, but how to sequence it for maximum impact.",
+        "auto_assign": "Travel itineraries, dining, events, gift-giving",
+        "type": "specialist",
+    },
 }
 
 FUN_PERSONAS = {
@@ -148,9 +163,46 @@ TOPIC_KEYWORDS = {
         "margin", "enterprise", "compliance", "legal", "license",
     ],
     "personal": [
-        "career", "job", "quit", "resign", "move", "relocate", "life",
-        "decision", "family", "relationship", "health", "hobby", "side project",
-        "freelance", "remote", "balance", "burnout", "motivation", "learning",
+        "career", "job", "quit", "resign", "relocate", "life",
+        "decision", "family", "relationship", "freelance", "remote",
+        "balance", "burnout", "motivation",
+    ],
+    "travel": [
+        "travel", "trip", "vacation", "destination", "hotel", "flight",
+        "itinerary", "visit", "explore", "tourism", "airbnb", "hostel",
+        "airport", "road trip", "backpack", "cruise", "resort",
+        "city guide", "sightseeing", "layover", "weekend getaway",
+    ],
+    "food_drink": [
+        "restaurant", "food", "dining", "chef", "cuisine", "recipe",
+        "cooking", "meal", "bar", "cocktail", "wine", "coffee", "cafe",
+        "brunch", "dinner", "tasting", "reservation", "michelin",
+        "street food", "brewery", "distillery", "bakery", "menu",
+    ],
+    "home_life": [
+        "pet", "dog", "cat", "puppy", "kitten", "garden", "gardening",
+        "plant", "yard", "home improvement", "renovation", "decor",
+        "interior design", "cleaning", "organizing", "furniture", "diy",
+        "landscaping", "apartment", "house", "neighborhood", "vet", "breed",
+        "train a dog", "train a puppy", "train a cat",
+    ],
+    "wellness": [
+        "fitness", "workout", "exercise", "gym", "health", "meditation",
+        "yoga", "sleep", "diet", "nutrition", "mental health", "therapy",
+        "self-care", "running", "weight", "stress", "mindfulness",
+        "recovery", "supplements", "habit",
+    ],
+    "personal_finance": [
+        "budget", "savings", "invest", "investing", "retirement", "mortgage",
+        "debt", "credit", "insurance", "tax", "portfolio", "stocks",
+        "etf", "401k", "ira", "real estate", "net worth", "emergency fund",
+        "financial planning", "compound interest",
+    ],
+    "learning": [
+        "learn", "course", "tutorial", "skill", "certification", "degree",
+        "bootcamp", "self-taught", "book", "reading list", "practice",
+        "mentor", "study", "workshop", "class", "curriculum", "hobby",
+        "creative", "craft", "photography", "music", "writing",
     ],
     "marketing": [
         "marketing", "brand", "growth", "seo", "content", "social media",
@@ -178,6 +230,12 @@ TOPIC_TO_PERSONAS = {
     "marketing":    ["The Contrarian", "The User Advocate", "The Growth Hacker"],
     "debugging":    ["The Contrarian", "The Pragmatist", "The Systems Thinker"],
     "strategic":    ["The Contrarian", "The Visionary", "The Radical"],
+    "travel":           ["The Contrarian", "The Insider", "The Experience Designer"],
+    "food_drink":       ["The Contrarian", "The Curator", "The Insider"],
+    "home_life":        ["The Contrarian", "The Pragmatist", "The Craftsperson"],
+    "wellness":         ["The Contrarian", "The Pragmatist", "The Outsider"],
+    "personal_finance": ["The Contrarian", "The Economist", "The Risk Analyst"],
+    "learning":         ["The Contrarian", "The Outsider", "The Pragmatist"],
 }
 
 AGENT_ORDER = ["advisor_1", "advisor_2", "advisor_3"]
