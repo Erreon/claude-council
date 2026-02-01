@@ -50,11 +50,11 @@ Each CLI tool requires its own account and authentication. See their respective 
 
 ### Claude-Only Mode
 
-If you only have Claude Code installed, switch to all-Claude mode. The personas still create meaningful diversity — each agent gets a different role and system prompt. Just tell Claude:
+If you only have Claude Code installed, **you don't need to do anything** — the council auto-detects which CLIs are available and adapts. With only Claude on PATH, all three advisor slots automatically dispatch to Claude. No config change needed.
 
-> "Switch the council to all Claude"
+The personas still create meaningful diversity — each agent gets a different role and system prompt. When all agents share the same label, the briefing shows **persona names only** (e.g., "The Contrarian", "The Pragmatist") for clean output.
 
-Or manually: edit the Agent Configuration table in `skills/council/SKILL.md` — there's a commented-out Claude-only block ready to swap in. When all agents share the same label, the briefing shows **persona names only** (e.g., "The Contrarian", "The Pragmatist") for clean output.
+You can also switch modes manually by telling Claude "switch the council to all Claude", or by editing the Agent Configuration table in `skills/council/SKILL.md` — there's a commented-out Claude-only block ready to swap in.
 
 ### Switching Configurations
 
@@ -90,7 +90,7 @@ Any CLI that accepts a prompt and returns text works. Some options:
 ### Minimum Requirements
 
 - **Claude Code** — Required. This is what runs the skills and acts as mediator.
-- **At least one agent CLI** — The default config uses Codex, Gemini, and Claude. If some aren't installed, the skill notes failures and proceeds with available agents. For Claude-only mode, no other tools are needed.
+- **At least one agent CLI** — The default config uses Codex, Gemini, and Claude. The council auto-detects which CLIs are available at the start of each session and adapts: all 3 for full multi-provider, Claude-only if that's all you have, or a mix. Missing agents are noted in the briefing header.
 
 ## Installation
 
@@ -183,26 +183,30 @@ If you're using WSL, it should work the same as Linux. Native Windows may requir
 
 ## Recommended Settings
 
-The council dispatches multiple CLI tools and manages session files, which can trigger frequent permission prompts. Adding these to your `~/.claude/settings.json` under `permissions.allow` makes sessions much smoother:
+**Without these permissions, Claude Code will ask "Do you want to proceed?" on every `/council` invocation.** The council runs CLI detection, agent dispatch, and session management commands — each can trigger a prompt. Adding these to your `~/.claude/settings.json` makes sessions seamless:
 
 ```json
 {
   "permissions": {
     "allow": [
-      "Bash(python3 *council_cli*)",
-      "Bash(echo * | codex *)",
-      "Bash(gemini *)",
-      "Bash(claude -p *)",
-      "Bash(mkdir -p */.claude/council/*)",
-      "Bash(mkdir -p */Documents/council*)"
+      "Bash(python3:*)",
+      "Bash(codex:*)",
+      "Bash(gemini:*)",
+      "Bash(claude:*)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(command:*)",
+      "Bash(mkdir:*)"
     ]
   }
 }
 ```
 
-For Claude-only mode you only need `"Bash(claude -p *)"`. If you add Ollama, add `"Bash(ollama *)"`. You may also want general-purpose entries like `"Bash(git *)"` and `"Bash(gh *)"` if you haven't already.
+For Claude-only mode you only need `"Bash(python3:*)"`, `"Bash(claude:*)"`, and the utility entries. If you add Ollama, add `"Bash(ollama:*)"`.
 
-> **⚠️ Security note:** These permissions allow Claude to send prompts to external AI services without asking for confirmation. The council skill is designed to never include sensitive data like API keys or credentials in agent prompts, but you should review the skill files if you have concerns. If you'd prefer to approve each dispatch manually, skip these settings — the council works fine without them, it just asks for permission before each agent call.
+The first-run hook prints this permissions block when you start your first session, so you'll see it at install time too.
+
+> **Security note:** These permissions allow Claude to run CLI tools without asking for confirmation. The council skill is designed to never include sensitive data like API keys or credentials in agent prompts, but you should review the skill files if you have concerns. If you'd prefer to approve each dispatch manually, skip these settings — the council works fine without them, it just asks for permission before each agent call.
 
 ## Usage
 
@@ -519,6 +523,22 @@ All subcommands output JSON to stdout. Errors go to stderr.
 | `session outcome` | Annotate outcome | `council_cli.py session outcome --id "..." --status "implemented"` |
 | `historian` | Find related past sessions | `council_cli.py historian --question "..."` |
 | `similarity` | Check response similarity | `echo '{...}' \| council_cli.py similarity --stdin` |
+| `agents` | Check which agent CLIs are on PATH | `council_cli.py agents` |
+| `doctor` | Full health check (versions, dirs, helpers) | `council_cli.py doctor` |
+
+### Diagnostics
+
+If something isn't working, the CLI helper has two diagnostic commands:
+
+```bash
+# Quick check — which agent CLIs are available?
+python3 ~/.claude/skills/council/council_cli.py agents
+
+# Full health check — versions, directories, helper paths, Python
+python3 ~/.claude/skills/council/council_cli.py doctor
+```
+
+Both output structured JSON. The `agents` command is fast (PATH check only) and runs automatically before every dispatch. The `doctor` command is thorough (actually runs `--version` on each CLI) and is intended for manual troubleshooting.
 
 ## Customization
 

@@ -70,6 +70,59 @@ Switched to symlinks by default (better for development), added `--copy` flag fo
 
 ---
 
+## Onboarding & Ease of Use — v1.1.0
+
+The biggest complaint from new users was friction on first use: permission prompts on every `/council` invocation, no indication of what's installed, and Claude-only users having to manually switch configurations. This release fixes all of that.
+
+### Auto-Detection
+
+The council now auto-detects which agent CLIs are installed before every dispatch and adapts automatically:
+
+- **All 3 available** — Normal multi-provider dispatch
+- **Only Claude** — All 3 advisor slots dispatch to Claude. No config change needed.
+- **2 of 3** — Uses what's available, fills the missing slot with a fallback, notes it in the briefing
+- **0 available** — Shows setup instructions instead of failing silently
+
+This means a user who installs the plugin with only Claude Code never needs to manually "switch to all-Claude mode" — it just works.
+
+### Diagnostics
+
+Added two new CLI helper subcommands:
+
+- **`agents`** — Fast PATH check (`shutil.which` only). Returns which CLIs are available, their paths, and a mode suggestion. Runs automatically before every dispatch.
+- **`doctor`** — Thorough health check that actually runs `--version` on each CLI, verifies session/archive directories, checks CLI helper locations, and reports Python version. For manual troubleshooting.
+
+### Briefing Status Header
+
+Council briefings now include an agent status line:
+
+```
+*Agents: Codex OK, Gemini OK, Claude OK | CLI Helper: Active | Mode: staggered*
+```
+
+Added `--agent-status` and `--mode` arguments to the `synthesis-prompt` subcommand to support this.
+
+### Rich First-Run Output
+
+Replaced the minimal "missing CLI tools" message in the SessionStart hook with a full diagnostic:
+
+- Agent install status with checkmarks
+- Mode suggestion based on what's detected
+- Python and CLI helper status
+- Copy-pasteable permissions block for `~/.claude/settings.json`
+- Available commands quick reference
+- Links to `doctor` and `agents` for future diagnostics
+
+### Permission Prompt Reduction
+
+The CLI detection and agent availability check are now combined into a single bash block (previously 2-3 separate calls, each triggering a permission prompt). The first-run output prominently explains which permissions to add to eliminate prompts entirely.
+
+### Council-Debate Parity
+
+The `/council-debate` skill now has the same auto-detection logic, so debates also adapt to whatever CLIs are installed.
+
+---
+
 ## What's Next
 
 Open areas for future work:

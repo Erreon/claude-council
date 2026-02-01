@@ -55,18 +55,30 @@ Before producing the briefing, check the Agent Configuration table above:
 
 A Python CLI helper (`council_cli.py`) can offload deterministic logic (parsing, persona assignment, prompt building, session management) to save tokens and improve consistency. It lives alongside this skill file.
 
-**Detection — run this once at the start of every `/council` session:**
+**Detection + Agent Availability — run this SINGLE block once at the start of every `/council` session. Do NOT split into multiple Bash calls — run the entire block as one command to avoid repeated permission prompts:**
 
 ```bash
-# Check plugin env var first, then manual/symlinked install, then plugin cache
+# Detect CLI helper + agent availability in one shot
+COUNCIL_CLI=""
 if [ -n "$CLAUDE_PLUGIN_ROOT" ] && python3 "$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py" --version >/dev/null 2>&1; then
     COUNCIL_CLI="$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py"
 elif python3 "$HOME/.claude/skills/council/council_cli.py" --version >/dev/null 2>&1; then
     COUNCIL_CLI="$HOME/.claude/skills/council/council_cli.py"
 elif CACHE_CLI="$(find "$HOME/.claude/plugins/cache/claude-council" -name council_cli.py -path "*/skills/council/*" 2>/dev/null | head -1)" && [ -n "$CACHE_CLI" ] && python3 "$CACHE_CLI" --version >/dev/null 2>&1; then
     COUNCIL_CLI="$CACHE_CLI"
+fi
+# Agent availability (combined in same call)
+if [ -n "$COUNCIL_CLI" ]; then
+    AGENT_STATUS=$(python3 "$COUNCIL_CLI" agents 2>/dev/null)
+    echo "COUNCIL_CLI=$COUNCIL_CLI"
+    echo "$AGENT_STATUS"
 else
-    COUNCIL_CLI=""
+    CODEX_OK=false; GEMINI_OK=false; CLAUDE_OK=false; AGENT_COUNT=0
+    command -v codex  >/dev/null 2>&1 && CODEX_OK=true  && AGENT_COUNT=$((AGENT_COUNT + 1))
+    command -v gemini >/dev/null 2>&1 && GEMINI_OK=true  && AGENT_COUNT=$((AGENT_COUNT + 1))
+    command -v claude >/dev/null 2>&1 && CLAUDE_OK=true  && AGENT_COUNT=$((AGENT_COUNT + 1))
+    echo "COUNCIL_CLI="
+    echo "CODEX=$CODEX_OK GEMINI=$GEMINI_OK CLAUDE=$CLAUDE_OK COUNT=$AGENT_COUNT"
 fi
 ```
 
@@ -79,12 +91,27 @@ If `COUNCIL_CLI` is set, use the CLI paths described in each step below. If empt
 - **Step 1 (Assign):** `python3 "$COUNCIL_CLI" assign --question "..." [--personas "X,Y,Z"] [--fun]`
 - **Step 1 (Prompt):** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."]` (repeat per agent)
 - **Follow-up prompts:** `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."`
-- **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --stdin`
+- **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" --stdin`
 - **Session create:** `python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'`
 - **Session append:** `echo '{...}' | python3 "$COUNCIL_CLI" session append --id "..." --stdin`
 - **Similarity check:** `echo '{...}' | python3 "$COUNCIL_CLI" similarity --stdin`
 - **Rating:** `python3 "$COUNCIL_CLI" session rate --id "..." --rating N`
 - **Outcome:** `python3 "$COUNCIL_CLI" session outcome --id "..." --status "..." --note "..."`
+- **Agents check:** `python3 "$COUNCIL_CLI" agents`
+- **Full diagnostics:** `python3 "$COUNCIL_CLI" doctor`
+
+## Agent Availability
+
+**Adapt dispatch based on the detection results above:**
+
+| Scenario | Behavior |
+|----------|----------|
+| **All 3 available** | Normal dispatch using the Agent Configuration table as-is |
+| **Only Claude available** | Auto-switch to Claude-only: use `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` for all 3 advisor slots. Set all labels to "Claude". No config change needed — just dispatch all 3 to Claude. |
+| **2 of 3 available** | Dispatch to the available agents only. Note the missing agent in the briefing: *"Note: [Agent] was unavailable for this session."* Fill the missing slot with one of the available agents (prefer Claude as fallback). |
+| **0 available** | Do NOT dispatch. Instead, show: *"No agent CLIs found. Install at least one to use the council. Run `python3 council_cli.py doctor` for setup help, or see the install commands in the README."* |
+
+This means a user who only has Claude installed never needs to manually "switch to all-Claude mode" — the skill detects it and adapts. The `AGENT_STATUS` JSON (when available) is passed to the synthesis-prompt for the status header line.
 
 ## Personas
 
@@ -297,6 +324,7 @@ End with a single sentence starting with "RECOMMENDATION: I recommend..." that c
 Apply the **Labeling Logic** from the Agent Configuration section:
 - If all labels are the same → *Personas: [Persona 1], [Persona 2], [Persona 3]*
 - If labels differ → *Personas: [Label 1] as [Persona 1], [Label 2] as [Persona 2], [Label 3] as [Persona 3]*
+*Agents: [Agent1] OK, [Agent2] OK, [Agent3] Missing | CLI Helper: Active | Mode: [mode]*
 
 [*Prior context: On [date], the council discussed "[topic]" — [1 sentence outcome]*]  ← only if historian found relevant history
 

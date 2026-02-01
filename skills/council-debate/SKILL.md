@@ -218,21 +218,36 @@ After the verdict (and after each optional Round 3), save a JSON checkpoint to `
 
 Use the Write tool to save/update this file after the verdict. If the user requests Round 3, read the existing file, append the round, update the verdict, and re-save.
 
-### CLI Acceleration (Optional)
+### CLI Acceleration + Agent Detection
 
-If the council CLI helper is available, use it for session creation and historian checks:
+**Run this SINGLE block once at the start of every `/council-debate` session. Do NOT split into multiple Bash calls — run the entire block as one command to avoid repeated permission prompts:**
 
 ```bash
+# Detect CLI helper + agent availability in one shot
+COUNCIL_CLI=""
 if [ -n "$CLAUDE_PLUGIN_ROOT" ] && python3 "$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py" --version >/dev/null 2>&1; then
     COUNCIL_CLI="$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py"
 elif python3 "$HOME/.claude/skills/council/council_cli.py" --version >/dev/null 2>&1; then
     COUNCIL_CLI="$HOME/.claude/skills/council/council_cli.py"
+elif CACHE_CLI="$(find "$HOME/.claude/plugins/cache/claude-council" -name council_cli.py -path "*/skills/council/*" 2>/dev/null | head -1)" && [ -n "$CACHE_CLI" ] && python3 "$CACHE_CLI" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$CACHE_CLI"
+fi
+# Agent availability (combined in same call)
+if [ -n "$COUNCIL_CLI" ]; then
+    AGENT_STATUS=$(python3 "$COUNCIL_CLI" agents 2>/dev/null)
+    echo "COUNCIL_CLI=$COUNCIL_CLI"
+    echo "$AGENT_STATUS"
 else
-    COUNCIL_CLI=""
+    CODEX_OK=false; GEMINI_OK=false; CLAUDE_OK=false; AGENT_COUNT=0
+    command -v codex  >/dev/null 2>&1 && CODEX_OK=true  && AGENT_COUNT=$((AGENT_COUNT + 1))
+    command -v gemini >/dev/null 2>&1 && GEMINI_OK=true  && AGENT_COUNT=$((AGENT_COUNT + 1))
+    command -v claude >/dev/null 2>&1 && CLAUDE_OK=true  && AGENT_COUNT=$((AGENT_COUNT + 1))
+    echo "COUNCIL_CLI="
+    echo "CODEX=$CODEX_OK GEMINI=$GEMINI_OK CLAUDE=$CLAUDE_OK COUNT=$AGENT_COUNT"
 fi
 ```
 
-**If CLI available:**
+**If CLI available, use these for session management:**
 ```bash
 # Check for related past sessions/debates before starting
 python3 "$COUNCIL_CLI" historian --question "the debate topic"
@@ -243,6 +258,17 @@ python3 "$COUNCIL_CLI" session create --question "the topic" --topic "short topi
 # Append round data
 echo '{"label":"Opening arguments","codex":"...","gemini":"...","claude":"..."}' | python3 "$COUNCIL_CLI" session append --id "SESSION_ID" --stdin
 ```
+
+### Agent Availability
+
+**Adapt dispatch based on the detection results above:**
+
+| Scenario | Behavior |
+|----------|----------|
+| **All 3 available** | Normal dispatch using the Agent Configuration table as-is |
+| **Only Claude available** | Use `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` for all 3 slots (Position A debater, Position B debater, Independent analyst). Set all labels to "Claude". |
+| **2 of 3 available** | Dispatch to the available agents. Fill the missing slot with one of the available agents (prefer Claude as fallback). Note in the verdict: *"Note: [Agent] was unavailable for this debate."* |
+| **0 available** | Do NOT dispatch. Show: *"No agent CLIs found. Install at least one to run a debate. Run `python3 council_cli.py doctor` for setup help."* |
 
 ## Position Assignment
 

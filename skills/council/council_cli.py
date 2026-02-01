@@ -12,12 +12,14 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import random
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # ---------------------------------------------------------------------------
 # Directories
@@ -622,6 +624,22 @@ def cmd_synthesis_prompt(args):
 
     matrix_positions = " | ".join("[2-5 word position]" for _ in advisor_headers)
 
+    # Build agent status line if provided
+    status_line = ""
+    if args.agent_status:
+        try:
+            agent_status = json.loads(args.agent_status) if isinstance(args.agent_status, str) else args.agent_status
+            status_parts = []
+            for cli in ["codex", "gemini", "claude"]:
+                if cli in agent_status.get("agents", {}):
+                    info = agent_status["agents"][cli]
+                    status_parts.append(f"{info['label'].split(' ')[0]} {'OK' if info['available'] else 'Missing'}")
+            cli_helper = "Active" if agent_status.get("cli_helper_active", True) else "Inactive"
+            mode = args.mode or "parallel"
+            status_line = f"\n*Agents: {', '.join(status_parts)} | CLI Helper: {cli_helper} | Mode: {mode}*"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
     prompt = f"""You are the neutral mediator for a council of AI advisors. Synthesize their responses.
 
 QUESTION: {question}
@@ -634,7 +652,7 @@ Produce a briefing in this EXACT format:
 ---
 
 **Council Briefing: [Topic]**
-*Personas: {personas_line}*
+*Personas: {personas_line}*{status_line}
 
 {advisor_lines}
 
@@ -879,6 +897,153 @@ def cmd_similarity(args):
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: agents (fast PATH check)
+# ---------------------------------------------------------------------------
+
+AGENT_CLIS = {
+    "codex": {"label": "Codex (OpenAI)", "install": "npm install -g @openai/codex"},
+    "gemini": {"label": "Gemini (Google)", "install": "npm install -g @google/gemini-cli"},
+    "claude": {"label": "Claude (Anthropic)", "install": "https://docs.anthropic.com/en/docs/claude-code"},
+}
+
+
+def cmd_agents(args):
+    """Fast check: which agent CLIs are on PATH (shutil.which only)."""
+    agents = {}
+    for cli, info in AGENT_CLIS.items():
+        path = shutil.which(cli)
+        agents[cli] = {
+            "available": path is not None,
+            "path": path,
+            "label": info["label"],
+            "install": info["install"],
+        }
+
+    available = [c for c, a in agents.items() if a["available"]]
+    missing = [c for c, a in agents.items() if not a["available"]]
+
+    if len(available) == 3:
+        mode_suggestion = "all-3"
+    elif len(available) == 0:
+        mode_suggestion = "none"
+    elif available == ["claude"]:
+        mode_suggestion = "claude-only"
+    else:
+        mode_suggestion = "partial"
+
+    emit({
+        "agents": agents,
+        "available": available,
+        "missing": missing,
+        "count": len(available),
+        "mode_suggestion": mode_suggestion,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: doctor (thorough health check)
+# ---------------------------------------------------------------------------
+
+def cmd_doctor(args):
+    """Thorough health check: run --version on each CLI, verify dirs, check helpers."""
+    # Agent CLI checks (actually run --version)
+    agents = {}
+    for cli, info in AGENT_CLIS.items():
+        path = shutil.which(cli)
+        version = None
+        healthy = False
+        error = None
+        if path:
+            try:
+                result = subprocess.run(
+                    [cli, "--version"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                version = result.stdout.strip() or result.stderr.strip()
+                healthy = result.returncode == 0
+                if not healthy:
+                    error = f"exit code {result.returncode}"
+            except subprocess.TimeoutExpired:
+                error = "timed out"
+            except FileNotFoundError:
+                error = "not found"
+            except Exception as e:
+                error = str(e)
+        else:
+            error = "not on PATH"
+
+        agents[cli] = {
+            "available": path is not None,
+            "healthy": healthy,
+            "path": path,
+            "version": version,
+            "label": info["label"],
+            "install": info["install"],
+            "error": error,
+        }
+
+    # Directory checks
+    dirs = {
+        "sessions": {
+            "path": str(SESSIONS_DIR),
+            "exists": SESSIONS_DIR.exists(),
+            "is_dir": SESSIONS_DIR.is_dir() if SESSIONS_DIR.exists() else False,
+            "file_count": len(list(SESSIONS_DIR.glob("*.json"))) if SESSIONS_DIR.is_dir() else 0,
+        },
+        "archive": {
+            "path": str(ARCHIVE_DIR),
+            "exists": ARCHIVE_DIR.exists(),
+            "is_dir": ARCHIVE_DIR.is_dir() if ARCHIVE_DIR.exists() else False,
+        },
+    }
+
+    # CLI helper checks
+    cli_helper = {}
+    # Check all known locations
+    locations = [
+        ("plugin_env", os.environ.get("CLAUDE_PLUGIN_ROOT", "") + "/skills/council/council_cli.py" if os.environ.get("CLAUDE_PLUGIN_ROOT") else ""),
+        ("symlink", str(Path.home() / ".claude" / "skills" / "council" / "council_cli.py")),
+        ("self", os.path.abspath(__file__)),
+    ]
+    for name, path in locations:
+        if path:
+            p = Path(path)
+            cli_helper[name] = {
+                "path": path,
+                "exists": p.exists(),
+                "is_symlink": p.is_symlink() if p.exists() else False,
+            }
+
+    # Python check
+    python_path = shutil.which("python3")
+    python_version = None
+    if python_path:
+        try:
+            result = subprocess.run(
+                ["python3", "--version"],
+                capture_output=True, text=True, timeout=5,
+            )
+            python_version = result.stdout.strip()
+        except Exception:
+            pass
+
+    available = [c for c, a in agents.items() if a["healthy"]]
+    missing = [c for c, a in agents.items() if not a["available"]]
+    unhealthy = [c for c, a in agents.items() if a["available"] and not a["healthy"]]
+
+    emit({
+        "agents": agents,
+        "available": available,
+        "missing": missing,
+        "unhealthy": unhealthy,
+        "directories": dirs,
+        "cli_helper": cli_helper,
+        "python": {"path": python_path, "version": python_version},
+        "healthy": len(unhealthy) == 0 and dirs["sessions"]["exists"] and dirs["archive"]["exists"],
+    })
+
+
+# ---------------------------------------------------------------------------
 # Main: argparse setup
 # ---------------------------------------------------------------------------
 
@@ -923,6 +1088,8 @@ def main():
     p_synth.add_argument("--personas-json", default=None, help="JSON map of agent->persona")
     p_synth.add_argument("--labels-json", default=None, help="JSON map of agent->label (e.g. 'Claude', 'Codex (OpenAI)')")
     p_synth.add_argument("--prior-context", default=None)
+    p_synth.add_argument("--agent-status", default=None, help="JSON agent status from 'agents' subcommand for briefing header")
+    p_synth.add_argument("--mode", default=None, help="Dispatch mode (parallel/staggered/sequential) for briefing header")
     p_synth.add_argument("--stdin", action="store_true")
 
     # session (with sub-actions)
@@ -947,6 +1114,12 @@ def main():
     p_sim = subparsers.add_parser("similarity", help="Check response similarity")
     p_sim.add_argument("--stdin", action="store_true")
 
+    # agents (fast PATH check)
+    subparsers.add_parser("agents", help="Check which agent CLIs are on PATH")
+
+    # doctor (thorough health check)
+    subparsers.add_parser("doctor", help="Run thorough health check on all components")
+
     args = parser.parse_args()
 
     dispatch = {
@@ -958,6 +1131,8 @@ def main():
         "session": cmd_session,
         "historian": cmd_historian,
         "similarity": cmd_similarity,
+        "agents": cmd_agents,
+        "doctor": cmd_doctor,
     }
 
     dispatch[args.command](args)
