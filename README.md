@@ -36,31 +36,39 @@ You → /council Should I build or buy this feature?
 
 ## Agent Configuration
 
-The council dispatches to **three AI agents** via CLI commands. By default, all three use `claude -p` — it works out of the box with no extra installs. You can swap any agent for a different provider by editing the config table in the skill file.
+The council dispatches to **three AI agents** via CLI commands. By default, it uses three different providers for maximum perspective diversity — different models have different training data, reasoning patterns, and blind spots.
 
-### Default (All Claude)
+### Default (Multi-Provider)
 
 | Agent | CLI Tool | Install |
 |-------|----------|---------|
-| Advisor 1 | Claude CLI | Included with Claude Code |
-| Advisor 2 | Claude CLI | Included with Claude Code |
-| Advisor 3 | Claude CLI | Included with Claude Code |
+| Advisor 1 | [OpenAI Codex CLI](https://github.com/openai/codex) | `npm install -g @openai/codex` |
+| Advisor 2 | [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) | `npm install -g @google/gemini-cli` |
+| Advisor 3 | [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) | Included with Claude Code |
 
-The personas create meaningful diversity even with a single model — each agent gets a different role and system prompt. When all agents use the same label, the briefing shows **persona names only** (e.g., "The Contrarian", "The Pragmatist") for clean output.
+Each CLI tool requires its own account and authentication. See their respective docs for setup. With mixed providers, the briefing uses **"Label as Persona"** format (e.g., "Codex (OpenAI) as The Contrarian") so you can tell which model said what.
 
-### Adding Other Models
+### Claude-Only Mode
 
-For maximum perspective diversity, swap in agents from different providers. Different models have different training data, reasoning patterns, and blind spots. Edit the Agent Configuration table at the top of `skills/council/SKILL.md` — there's a commented-out multi-provider block ready to uncomment.
+If you only have Claude Code installed, switch to all-Claude mode. The personas still create meaningful diversity — each agent gets a different role and system prompt. Just tell Claude:
 
-| Provider | Label | CLI Command | Install |
-|----------|-------|-------------|---------|
-| [OpenAI Codex](https://github.com/openai/codex) | `Codex (OpenAI)` | `echo "<PROMPT>" \| codex exec --skip-git-repo-check - 2>/dev/null` | `npm install -g @openai/codex` |
-| [Google Gemini](https://github.com/google-gemini/gemini-cli) | `Gemini (Google)` | `gemini -p '<PROMPT>' -o text 2>/dev/null` | `npm install -g @google/gemini-cli` |
-| [Ollama](https://ollama.ai) (local) | `Ollama (Local)` | `ollama run llama3 '<PROMPT>' 2>/dev/null` | [ollama.ai](https://ollama.ai) |
+> "Switch the council to all Claude"
 
-Each CLI tool requires its own account and authentication. See their respective docs for setup.
+Or manually: edit the Agent Configuration table in `skills/council/SKILL.md` — there's a commented-out Claude-only block ready to swap in. When all agents share the same label, the briefing shows **persona names only** (e.g., "The Contrarian", "The Pragmatist") for clean output.
 
-When you mix providers, the briefing automatically switches to **"Label as Persona"** format (e.g., "Codex (OpenAI) as The Contrarian") so you can tell which model said what. Consider using `--mode staggered` with mixed providers to avoid resource contention.
+### Switching Configurations
+
+You can switch between configurations and dispatch modes by talking to Claude naturally:
+
+| What you say | What happens |
+|------|------|
+| "Switch the council to all Claude" | Swaps config to 3x Claude CLI |
+| "Switch back to multi-provider" | Swaps config to Codex + Gemini + Claude |
+| "Use staggered mode" | Sets dispatch to staggered (recommended for multi-provider) |
+| "Use parallel mode" | Sets dispatch to parallel (recommended for Claude-only) |
+| "Add Ollama as a 4th advisor" | Adds a row to the config table |
+
+Claude edits the skill file directly — changes take effect on the next `/council` invocation.
 
 ### Adding More Advisors
 
@@ -70,9 +78,19 @@ The council supports more than 3 seats. Add rows to the Agent Configuration tabl
 /council --seats 5 Should we rewrite the backend?
 ```
 
+### Other Providers
+
+Any CLI that accepts a prompt and returns text works. Some options:
+
+| Provider | Label | CLI Command | Install |
+|----------|-------|-------------|---------|
+| [Ollama](https://ollama.ai) (local) | `Ollama (Local)` | `ollama run llama3 '<PROMPT>' 2>/dev/null` | [ollama.ai](https://ollama.ai) |
+| Any LLM CLI | Your label | Your command with `<PROMPT>` placeholder | Per tool docs |
+
 ### Minimum Requirements
 
-- **Claude Code** — Required. This is what runs the skills and acts as mediator. No other tools needed for the default configuration.
+- **Claude Code** — Required. This is what runs the skills and acts as mediator.
+- **At least one agent CLI** — The default config uses Codex, Gemini, and Claude. If some aren't installed, the skill notes failures and proceeds with available agents. For Claude-only mode, no other tools are needed.
 
 ## Installation
 
@@ -86,7 +104,7 @@ There are three ways to install. All support natural language triggering — say
 
 ### Plugin Install (Recommended)
 
-**Prerequisites:** Just Claude Code. The default configuration uses `claude -p` for all three agents — no other tools needed.
+**Prerequisites:** Claude Code plus any agent CLIs you want to use. The default config uses Codex, Gemini, and Claude — see [Agent Configuration](#agent-configuration). For Claude-only mode, no extra tools needed.
 
 ```
 /plugin marketplace add Erreon/claude-council
@@ -139,17 +157,19 @@ mkdir -p ~/.claude/council/sessions
 mkdir -p ~/Documents/council
 ```
 
-**3. (Optional) Install additional CLI tools:**
-
-The default config uses Claude CLI for all three agents. To add other providers, see [Adding Other Models](#adding-other-models) above, then install and authenticate each tool.
+**3. Install the agent CLI tools:**
 
 ```bash
-# OpenAI Codex (optional — requires OpenAI account)
+# OpenAI Codex (requires OpenAI account)
 npm install -g @openai/codex
 
-# Google Gemini (optional — requires Google AI account)
+# Google Gemini (requires Google AI account)
 npm install -g @google/gemini-cli
+
+# Claude CLI is included with Claude Code
 ```
+
+Authenticate each tool according to its docs. If you only want Claude-only mode, skip this step and tell Claude "switch the council to all Claude".
 
 ### Windows
 
@@ -170,6 +190,8 @@ The council dispatches multiple CLI tools and manages session files, which can t
   "permissions": {
     "allow": [
       "Bash(python3 *council_cli*)",
+      "Bash(echo * | codex *)",
+      "Bash(gemini *)",
       "Bash(claude -p *)",
       "Bash(mkdir -p */.claude/council/*)",
       "Bash(mkdir -p */Documents/council*)"
@@ -178,7 +200,7 @@ The council dispatches multiple CLI tools and manages session files, which can t
 }
 ```
 
-If you add other providers, add their permissions too (e.g., `"Bash(echo * | codex *)"`, `"Bash(gemini *)"`, `"Bash(ollama *)"`). You may also want to add general-purpose entries like `"Bash(git *)"` and `"Bash(gh *)"` if you haven't already.
+For Claude-only mode you only need `"Bash(claude -p *)"`. If you add Ollama, add `"Bash(ollama *)"`. You may also want general-purpose entries like `"Bash(git *)"` and `"Bash(gh *)"` if you haven't already.
 
 > **⚠️ Security note:** These permissions allow Claude to send prompts to external AI services without asking for confirmation. The council skill is designed to never include sensitive data like API keys or credentials in agent prompts, but you should review the skill files if you have concerns. If you'd prefer to approve each dispatch manually, skip these settings — the council works fine without them, it just asks for permission before each agent call.
 

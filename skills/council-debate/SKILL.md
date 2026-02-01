@@ -11,19 +11,19 @@ Run a structured debate between AI agents where they respond to and challenge ea
 
 | Slot | Label | CLI Command |
 |------|-------|-------------|
-| Advisor 1 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
-| Advisor 2 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
-| Advisor 3 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
-
-<!-- Multi-provider alternative — uncomment this block and comment out the block above:
-| Slot | Label | CLI Command |
-|------|-------|-------------|
 | Advisor 1 | Codex (OpenAI) | `echo "<PROMPT>" \| codex exec --skip-git-repo-check - 2>/dev/null` |
 | Advisor 2 | Gemini (Google) | `gemini -p '<PROMPT>' -o text 2>/dev/null` |
 | Advisor 3 | Claude (Anthropic) | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+
+<!-- Claude-only alternative — uncomment this block and comment out the block above:
+| Slot | Label | CLI Command |
+|------|-------|-------------|
+| Advisor 1 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 2 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 3 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
 -->
 
-To use different models, replace the label and command for any row. See the main council skill for more examples.
+To switch configurations, see the "Switching Configurations" section in the main council skill.
 
 ### Labeling Logic
 

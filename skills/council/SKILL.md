@@ -11,24 +11,31 @@ Consult three external AI agents for independent perspectives — each assigned 
 
 | Slot | Label | CLI Command |
 |------|-------|-------------|
-| Advisor 1 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
-| Advisor 2 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
-| Advisor 3 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
-
-<!-- Multi-provider alternative — uncomment this block and comment out the block above:
-| Slot | Label | CLI Command |
-|------|-------|-------------|
 | Advisor 1 | Codex (OpenAI) | `echo "<PROMPT>" \| codex exec --skip-git-repo-check - 2>/dev/null` |
 | Advisor 2 | Gemini (Google) | `gemini -p '<PROMPT>' -o text 2>/dev/null` |
 | Advisor 3 | Claude (Anthropic) | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+
+<!-- Claude-only alternative — uncomment this block and comment out the block above:
+| Slot | Label | CLI Command |
+|------|-------|-------------|
+| Advisor 1 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 2 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
+| Advisor 3 | Claude | `claude -p '<PROMPT>' --no-session-persistence 2>/dev/null` |
 -->
 
-To use different models, replace the label and command for any row. Examples:
-- Codex: Label `Codex (OpenAI)`, Command `echo "<PROMPT>" | codex exec --skip-git-repo-check - 2>/dev/null`
-- Gemini: Label `Gemini (Google)`, Command `gemini -p '<PROMPT>' -o text 2>/dev/null`
-- Ollama: Label `Ollama (Local)`, Command `ollama run llama3 '<PROMPT>' 2>/dev/null`
-
 To add more advisors, add more rows (Advisor 4, Advisor 5, etc.) and use `--seats N` to match. The dispatch, synthesis, and JSON checkpoint will adapt automatically.
+
+### Switching Configurations
+
+The user can ask you to switch configurations at any time. When they do, edit the Agent Configuration table above by commenting/uncommenting the appropriate block. Examples of what the user might say:
+
+- **"Switch the council to all Claude"** or **"Use Claude for all 3 agents"** → Comment out the multi-provider table, uncomment the Claude-only table
+- **"Switch back to multi-provider"** or **"Use Codex, Gemini, and Claude"** → Comment out the Claude-only table, uncomment the multi-provider table
+- **"Use staggered mode"** or **"Switch to staggered dispatch"** → The user wants `--mode staggered` (recommended for multi-provider to avoid resource contention)
+- **"Use parallel mode"** or **"Switch to parallel dispatch"** → The user wants `--mode parallel` (works well for Claude-only since there's no cross-CLI contention)
+- **"Add Ollama as an advisor"** → Add a row: `| Advisor 4 | Ollama (Local) | \`ollama run llama3 '<PROMPT>' 2>/dev/null\` |`
+
+When switching, edit this file directly using the Edit tool. The change takes effect on the next `/council` invocation.
 
 ### Labeling Logic
 
