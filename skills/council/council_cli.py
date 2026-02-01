@@ -182,6 +182,23 @@ TOPIC_TO_PERSONAS = {
 
 AGENT_ORDER = ["advisor_1", "advisor_2", "advisor_3"]
 
+# ---------------------------------------------------------------------------
+# Tips (rotated in briefings/verdicts to surface discoverable features)
+# ---------------------------------------------------------------------------
+
+TIPS = [
+    'Say "archive this" to save a Markdown copy to ~/Documents/council/',
+    "/rate 1-5 to rate this session — higher-rated advice surfaces more in future councils",
+    "Use /council-debate to stress-test a decision the council agreed on",
+    '/council-outcome followed "what happened" tracks whether advice worked out',
+    'Say "show me the raw response from Advisor 1" for the full unabridged take',
+    "/council-history to browse, recap, or resume past sessions",
+    "Use --fun to add a chaotic persona like The Jokester or The Time Traveler",
+    'Use --personas "Contrarian, Economist, Radical" to pick your own council',
+    "The council remembers past sessions — related history is included automatically",
+    "Run /council-help for a quick reference of all commands and features",
+]
+
 # Maps old provider-based keys to new advisor keys (for backward compat)
 LEGACY_KEY_MAP = {"codex": "advisor_1", "gemini": "advisor_2", "claude": "advisor_3"}
 LEGACY_KEYS = set(LEGACY_KEY_MAP.keys())
@@ -676,7 +693,9 @@ Note which disagreements stem from persona framing vs genuine analytical diverge
 
 **Key Tension:** [The single most important unresolved trade-off. Frame it as a clear choice, not a hedge.]
 
----"""
+---
+
+> **Tip:** {random.choice(TIPS)}"""
 
     emit({"prompt": prompt.strip()})
 
@@ -1044,6 +1063,15 @@ def cmd_doctor(args):
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: tip
+# ---------------------------------------------------------------------------
+
+def cmd_tip(args):
+    """Return a random tip."""
+    emit({"tip": random.choice(TIPS)})
+
+
+# ---------------------------------------------------------------------------
 # Main: argparse setup
 # ---------------------------------------------------------------------------
 
@@ -1120,6 +1148,9 @@ def main():
     # doctor (thorough health check)
     subparsers.add_parser("doctor", help="Run thorough health check on all components")
 
+    # tip
+    subparsers.add_parser("tip", help="Return a random tip")
+
     args = parser.parse_args()
 
     dispatch = {
@@ -1133,6 +1164,7 @@ def main():
         "similarity": cmd_similarity,
         "agents": cmd_agents,
         "doctor": cmd_doctor,
+        "tip": cmd_tip,
     }
 
     dispatch[args.command](args)

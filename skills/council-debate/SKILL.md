@@ -162,6 +162,22 @@ The current Claude instance (you) acts as **neutral judge**. Present the debate 
 
 ---
 
+> **Tip:** [random tip — pick one from the list below]
+
+**Tip source:** If CLI is available, get the tip from `python3 "$COUNCIL_CLI" tip` (returns `{"tip": "..."}`). Otherwise pick one at random from this list:
+- Say "archive this" to save a Markdown copy to ~/Documents/council/
+- /rate 1-5 to rate this session — higher-rated advice surfaces more in future councils
+- Use /council-debate to stress-test a decision the council agreed on
+- /council-outcome followed "what happened" tracks whether advice worked out
+- Say "show me the raw response from Advisor 1" for the full unabridged take
+- /council-history to browse, recap, or resume past sessions
+- Use --fun to add a chaotic persona like The Jokester or The Time Traveler
+- Use --personas "Contrarian, Economist, Radical" to pick your own council
+- The council remembers past sessions — related history is included automatically
+- Run /council-help for a quick reference of all commands and features
+
+Rotate tips — don't repeat the same tip in back-to-back sessions.
+
 ### 5. Optional: Round 3
 
 If the user wants to go deeper, run a final round where each debater gives a 200-word closing statement incorporating the rebuttals. Then re-synthesize.
