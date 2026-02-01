@@ -58,11 +58,13 @@ A Python CLI helper (`council_cli.py`) can offload deterministic logic (parsing,
 **Detection — run this once at the start of every `/council` session:**
 
 ```bash
-# Check plugin location first, then manual install location
+# Check plugin env var first, then manual/symlinked install, then plugin cache
 if [ -n "$CLAUDE_PLUGIN_ROOT" ] && python3 "$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py" --version >/dev/null 2>&1; then
     COUNCIL_CLI="$CLAUDE_PLUGIN_ROOT/skills/council/council_cli.py"
 elif python3 "$HOME/.claude/skills/council/council_cli.py" --version >/dev/null 2>&1; then
     COUNCIL_CLI="$HOME/.claude/skills/council/council_cli.py"
+elif CACHE_CLI="$(find "$HOME/.claude/plugins/cache/claude-council" -name council_cli.py -path "*/skills/council/*" 2>/dev/null | head -1)" && [ -n "$CACHE_CLI" ] && python3 "$CACHE_CLI" --version >/dev/null 2>&1; then
+    COUNCIL_CLI="$CACHE_CLI"
 else
     COUNCIL_CLI=""
 fi
