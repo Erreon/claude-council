@@ -2,7 +2,7 @@
 
 A multi-AI council system for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Ask a question, get independent perspectives from multiple AI models, and receive a synthesized briefing from a neutral mediator.
 
-Each council member is assigned a **persona** that shapes their perspective, creating productive friction by design. The mediator has **institutional memory** — it checks past sessions for relevant context (weighted by user ratings) before each new discussion. Agents tag their claims by evidence level, and the briefing includes actionable next steps, a disagreement matrix, and an evidence audit.
+Each council member is assigned a **persona** that shapes their perspective, creating productive friction by design. The mediator has **institutional memory** — it checks past sessions for relevant context (weighted by user ratings) before each new discussion. Agents tag their claims by [evidence level](#evidence-tags), and the briefing includes [actionable next steps](#what-to-do-next), a [disagreement matrix](#disagreement-matrix), and an [evidence audit](#evidence-audit).
 
 > **Platform note:** This was built and tested on macOS. The skills are Markdown files that instruct Claude Code how to call CLI tools, so they should work on Linux as-is. Windows users may need to adjust the CLI commands in the skill files (shell quoting, paths, etc.).
 
@@ -234,6 +234,44 @@ The mediator will:
 ```
 
 Randomly replaces one council seat with a fun persona (see [Fun Personas](#fun-personas) below).
+
+### Reading the Briefing
+
+Every council briefing follows a consistent structure. Here's what each section means and how to use it.
+
+#### Advisor Summaries
+
+Each advisor's position is condensed to 2-3 sentences plus their core recommendation. These are summaries, not the full responses — if you want the raw output, ask to see the deep dive (it's stored in the session JSON).
+
+#### Evidence Tags
+
+Each advisor tags their claims with one of three levels:
+
+| Tag | Meaning | How to treat it |
+|-----|---------|-----------------|
+| `[ANCHORED]` | Based on specific data, evidence, or established fact | High confidence — act on it |
+| `[INFERRED]` | Logical deduction from known information | Reasonable — verify if stakes are high |
+| `[SPECULATIVE]` | Opinion, gut feel, or hypothesis | Treat as a hypothesis to test, not a conclusion |
+
+#### Evidence Audit
+
+The mediator scans the advisors' tagged claims and flags when consensus rests on speculation rather than evidence. If all three agents agree on something but none has anchored evidence, you'll see a warning. This prevents the briefing from sounding authoritative when it's actually just three models guessing in the same direction.
+
+#### What To Do Next
+
+2-3 concrete action items distilled from across all advisor positions. These are not summaries of what was discussed — they're things you should actually go do. Each starts with a verb, and they're rendered as a markdown checklist. The mediator doesn't advocate for any single advisor; it extracts the most actionable takeaways from the full discussion, including the disagreements.
+
+#### Disagreement Matrix
+
+A table showing where advisors diverge on key issues, with each position condensed to 2-5 words. The mediator notes which disagreements come from persona framing (the Contrarian is being contrarian) vs. genuine analytical divergence (they identified different root causes). This is often the most valuable part — the interesting signal is where smart perspectives clash, not where they agree.
+
+#### Consensus
+
+What the advisors agree on. Kept short (2-4 sentences) and honest — if consensus is weak, it says so rather than inflating thin agreement.
+
+#### Key Tension
+
+The single most important unresolved trade-off. Framed as a clear choice you need to make, not a hedge. This is the decision the council is handing back to you.
 
 **Follow-up replies:** After a briefing, just reply normally — the council will re-dispatch with your pushback included and note any position shifts. You can also do targeted drill-downs: reference a specific disagreement row, action item, or advisor's position to get focused follow-up instead of a full re-run.
 
