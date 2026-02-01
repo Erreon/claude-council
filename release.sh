@@ -4,21 +4,31 @@ set -euo pipefail
 # release.sh — Bump version in both plugin manifests, commit, tag, and push.
 #
 # Usage:
-#   ./release.sh <version>        # e.g. ./release.sh 1.3.0
-#   ./release.sh patch|minor|major # auto-increment from current version
+#   ./release.sh <version>              # e.g. ./release.sh 1.3.0
+#   ./release.sh patch|minor|major      # auto-increment from current version
+#   ./release.sh <version> --push       # bump and push without prompting
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_JSON="$REPO_DIR/.claude-plugin/plugin.json"
 MARKETPLACE_JSON="$REPO_DIR/.claude-plugin/marketplace.json"
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <version|patch|minor|major>"
+AUTO_PUSH=false
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: $0 <version|patch|minor|major> [--push]"
   echo ""
   echo "Examples:"
   echo "  $0 1.3.0    # set explicit version"
   echo "  $0 patch    # 1.2.0 -> 1.2.1"
   echo "  $0 minor    # 1.2.0 -> 1.3.0"
   echo "  $0 major    # 1.2.0 -> 2.0.0"
+  echo "  $0 patch --push  # bump and push without prompting"
+  exit 1
+fi
+
+if [[ $# -eq 2 && "$2" == "--push" ]]; then
+  AUTO_PUSH=true
+elif [[ $# -eq 2 ]]; then
+  echo "Error: Unknown flag '$2' (did you mean --push?)"
   exit 1
 fi
 
@@ -71,12 +81,21 @@ git tag "v$NEW_VERSION"
 echo ""
 echo "Committed and tagged v$NEW_VERSION."
 echo ""
-read -rp "Push to origin? [Y/n] " PUSH
-PUSH="${PUSH:-Y}"
-if [[ "$PUSH" =~ ^[Yy]$ ]]; then
+
+if [[ "$AUTO_PUSH" == true ]]; then
   git push origin main --tags
   echo "Pushed. Users can now run: claude plugin update claude-council@claude-council"
+elif [[ -t 0 ]]; then
+  read -rp "Push to origin? [Y/n] " PUSH
+  PUSH="${PUSH:-Y}"
+  if [[ "$PUSH" =~ ^[Yy]$ ]]; then
+    git push origin main --tags
+    echo "Pushed. Users can now run: claude plugin update claude-council@claude-council"
+  else
+    echo "Skipped push. Run manually:"
+    echo "  git push origin main --tags"
+  fi
 else
-  echo "Skipped push. Run manually:"
+  echo "Non-interactive shell detected. Run manually or use --push:"
   echo "  git push origin main --tags"
 fi

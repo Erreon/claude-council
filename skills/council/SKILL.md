@@ -82,9 +82,11 @@ else
 fi
 ```
 
-If `COUNCIL_CLI` is set, use the CLI paths described in each step below. If empty, follow the existing prose instructions — the skill works identically without the CLI.
+If `COUNCIL_CLI` is set, pass it to the subagent so it can use the CLI commands listed below. If empty, the subagent follows the prose instructions — the skill works identically without the CLI.
 
-**CLI paths by step:**
+**CLI commands used by the subagent (NOT the main conversation):**
+
+> The main conversation never calls these directly. They are listed here as a reference for building the subagent prompt.
 
 - **Step 0 (Historian):** `python3 "$COUNCIL_CLI" historian --question "..."`
 - **Step 1 (Parse):** `python3 "$COUNCIL_CLI" parse --raw "/council ..."`
@@ -215,13 +217,18 @@ Default is **parallel**. If you configure mixed providers (e.g., Codex + Gemini 
 
 ## Flow
 
-### 0. Historian Check (Mediator's Memory)
+> **ONE-BASH-CALL RULE:** Only ONE Bash call happens in the main conversation: the CLI detection block (above). Everything else — historian lookup, persona assignment, prompt building, agent dispatch — runs inside the Task subagent. The mediator does LLM reasoning only (topic classification, context gathering, flag parsing) then immediately launches the subagent.
 
-Before framing the question, the mediator checks for relevant past council sessions. Sessions with higher user ratings (from `/rate`) are weighted more heavily in relevance scoring — a 5-star session with keyword matches ranks above a 1-star session with the same matches. Unrated sessions default to 3/5.
+### 0. Historian Check (Mediator's Memory) — Delegated to Subagent
 
-1. Read the list of JSON files in `~/.claude/council/sessions/`
+The mediator does **NOT** run the historian CLI command itself. Instead, the mediator passes the question and CLI path to the subagent (Step 2), which runs the historian lookup internally. This avoids a Bash permission prompt in the main conversation.
+
+The historian logic is unchanged — sessions with higher user ratings (from `/rate`) are weighted more heavily in relevance scoring. A 5-star session with keyword matches ranks above a 1-star session with the same matches. Unrated sessions default to 3/5.
+
+The subagent will:
+1. Run `python3 "$COUNCIL_CLI" historian --question "..."` (or read session files manually if no CLI)
 2. Scan topic names and questions for relevance to the current question, weighted by rating
-3. If a related session exists, read its synthesis/outcome and include a **Prior Council Context** block in the agent prompts:
+3. If a related session exists, include a **Prior Council Context** block in the agent prompts:
 
 ```
 PRIOR COUNCIL CONTEXT:
@@ -233,11 +240,13 @@ If no related sessions exist, skip this block. Don't force connections where the
 
 This gives the council institutional memory — agents can build on, challenge, or reference past discussions rather than starting from zero every time.
 
-### 1. Frame the Question
+### 1. Frame the Question (Mediator — No Bash Calls)
 
 Take the user's question or topic and craft a clear, self-contained prompt. The prompt must include enough context that an agent with no prior conversation history can give a useful answer. If the question is about code, read relevant files and include their contents or summaries in the prompt.
 
-**Classify the topic yourself** before assigning personas. You (the mediator LLM) understand intent far better than keyword matching. Pick the best-fit topic from this list and pass it via `--topic` when calling the CLI's `assign` command:
+**No CLI calls here.** The mediator does LLM reasoning only in this step: topic classification, context gathering (via Read/Glob), and flag parsing. The `assign`, `prompt`, and `historian` CLI commands are called by the subagent in Step 2, not by the main conversation.
+
+**Classify the topic yourself** before assigning personas. You (the mediator LLM) understand intent far better than keyword matching. Pick the best-fit topic from this list and pass it to the subagent (which will call `assign --topic`):
 
 | Topic key | Use when the question is about... |
 |-----------|----------------------------------|
@@ -263,32 +272,67 @@ Do NOT ask the user to confirm the prompt. Just dispatch immediately. Speed matt
 
 ### 2. Dispatch via Subagent (Context Isolation)
 
+> **NEVER USE `run_in_background`.** Background task completion notifications leak into the main conversation after the briefing is delivered, creating noise and confusing the user. Every Bash call and every Task tool call inside the subagent must be **foreground only**.
+
 **IMPORTANT:** The entire council dispatch, agent responses, and synthesis MUST run inside a Task subagent to keep raw agent outputs out of the main conversation context. This prevents long council sessions from causing early autocompaction.
 
 Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that includes everything the subagent needs:
 
-- The framed question and any codebase context
-- The CLI commands for each agent
+- The user's topic classification and framed question
+- The CLI path (`COUNCIL_CLI`) and agent status JSON from the detection block
+- Any codebase context (file contents, summaries)
+- The CLI commands for each agent (from the Agent Configuration table)
 - The synthesis format to follow
 - The JSON checkpoint save instructions
+- Flags: dispatch mode, `--fun`, `--personas`, etc.
 - Whether this is a new session or a follow-up round (include previous round context if follow-up)
 
-**The subagent prompt must instruct it to:**
+**The subagent prompt must include the CRITICAL RULES preamble** (see next section) and instruct it to:
 
 0. Run `mkdir -p ~/.claude/council/sessions && mkdir -p ~/Documents/council` first to ensure save directories exist (silent no-op if they already exist)
 
-1. Run the three agents according to the **dispatch mode** (default: parallel), using the CLI commands from the **Agent Configuration** table at the top of this file. Replace `<PROMPT>` with the built prompt for each advisor.
+1. **Historian lookup:** Run `python3 "$COUNCIL_CLI" historian --question "..."` (or scan session files manually if no CLI) and incorporate any prior context into the agent prompts
 
-   **Dispatch modes:**
-   - **parallel** (default): Launch all 3 Bash calls as **foreground** parallel calls in a single message (multiple Bash tool calls without `run_in_background`). Do NOT use background tasks — background task completion notifications leak to the main conversation and create noise after the briefing is delivered.
+2. **Persona assignment:** Run `python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]` (or assign manually using the topic-persona mapping if no CLI)
+
+3. **Prompt building:** Run `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." [--prior-context "..."]` per agent (or build prompts manually using the template below if no CLI)
+
+4. Run the three agents according to the **dispatch mode** (default: parallel), using the CLI commands from the **Agent Configuration** table at the top of this file. Replace `<PROMPT>` with the built prompt for each advisor.
+
+   **Dispatch modes (NEVER use `run_in_background` in any mode):**
+   - **parallel** (default): Launch all 3 Bash calls as **foreground** parallel calls in a single message (multiple Bash tool calls without `run_in_background`).
    - **staggered**: Launch Advisor 1 + Advisor 2 as foreground parallel calls in one message, wait for both to finish, then launch Advisor 3 alone as a foreground call
    - **sequential**: Launch Advisor 1, wait for it to finish, then Advisor 2, wait, then Advisor 3. All foreground calls.
 
-2. Synthesize the three responses — preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average)
+5. Synthesize the three responses — preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average)
 
-3. Save the JSON checkpoint to `~/.claude/council/sessions/`
+6. Save the JSON checkpoint to `~/.claude/council/sessions/`
 
-4. Return ONLY the formatted briefing as its final output
+7. Return ONLY the formatted briefing as its final output
+
+### CRITICAL RULES Preamble (copy verbatim into every subagent prompt)
+
+The mediator must include this block at the **top** of every Task subagent prompt (initial dispatch and follow-ups). Copy it verbatim:
+
+```
+CRITICAL RULES — read before doing anything:
+1. NEVER use run_in_background on ANY tool call (Bash or Task). All calls must be foreground. Background task notifications leak to the user's main conversation and create noise.
+2. Return ONLY the formatted briefing as your final output. Do not return raw agent responses, debug logs, or intermediate state.
+3. If an agent times out (60s) or fails, note it in the briefing and proceed with the others. Do not retry or block.
+
+CLI COMMAND REFERENCE (use these, the main conversation does not):
+- Historian: python3 "$COUNCIL_CLI" historian --question "..."
+- Assign: python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]
+- Prompt: python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." [--prior-context "..."]
+- Follow-up prompt: python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."
+- Synthesis prompt: echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" --stdin
+- Session create: python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'
+- Session append: echo '{...}' | python3 "$COUNCIL_CLI" session append --id "..." --stdin
+- Similarity check: echo '{...}' | python3 "$COUNCIL_CLI" similarity --stdin
+- Tip: python3 "$COUNCIL_CLI" tip
+```
+
+Replace `$COUNCIL_CLI` with the actual path detected in the main conversation. If `COUNCIL_CLI` is empty, the subagent follows prose instructions instead.
 
 **Agent prompt template (for new sessions):**
 
@@ -421,7 +465,7 @@ Only suggest this when agreement is genuinely strong. If there are meaningful di
 After a council briefing, the user may reply with follow-up questions, pushback, or new angles without invoking `/council` again. When this happens, treat it as a continuation of the council session:
 
 1. Take the user's reply and build the follow-up context (original question, previous positions from the JSON checkpoint, the user's new input)
-2. Dispatch a new Task subagent with this context — same process as step 2
+2. Dispatch a new Task subagent with this context — same process as step 2. **Include the CRITICAL RULES preamble** at the top of the subagent prompt (same as the initial dispatch — no `run_in_background`, return only the briefing, handle timeouts gracefully).
 3. The subagent reads the existing JSON checkpoint, appends the new round, saves it, and returns only the briefing
 4. Present the returned briefing to the user
 
