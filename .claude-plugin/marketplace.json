@@ -1,0 +1,24 @@
+{
+  "name": "claude-council",
+  "owner": {
+    "name": "Jason Carpentier"
+  },
+  "metadata": {
+    "description": "Multi-AI council system for Claude Code — deliberation, debate, and institutional memory"
+  },
+  "plugins": [
+    {
+      "name": "claude-council",
+      "source": ".",
+      "description": "Multi-AI council system — get independent perspectives from Codex, Gemini, and Claude on any decision, then receive a synthesized briefing from a neutral mediator with institutional memory.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Jason Carpentier"
+      },
+      "homepage": "https://github.com/Erreon/claude-council",
+      "repository": "https://github.com/Erreon/claude-council",
+      "license": "MIT",
+      "keywords": ["council", "multi-agent", "decision-making", "debate", "personas"]
+    }
+  ]
+}

@@ -83,31 +83,26 @@ You don't need three different LLMs. If you only have Claude Code installed, you
 
 ## Installation
 
+There are three ways to install. All support natural language triggering — saying "ask the council about X" or "what do others think?" works regardless of install method because Claude matches the skill's description to your intent. The difference is the slash command name:
+
+| Method | Slash command | Best for |
+|--------|-----------|----------|
+| **Plugin install** | `/claude-council:council` | Easiest install, auto-updates |
+| **Script install** | `/council` | Shorter commands, symlink mode for development |
+| **Manual copy** | `/council` | Full control, no git needed |
+
 ### Plugin Install (Recommended)
-
-The easiest way to install. In Claude Code:
-
-```
-/plugin install claude-council
-```
-
-Or add the repo as a marketplace source first:
 
 ```
 /plugin marketplace add Erreon/claude-council
 /plugin install claude-council@claude-council
 ```
 
-Skills will be available as:
-- `/claude-council:council` — Ask the council
-- `/claude-council:council-debate` — Structured debate
-- `/claude-council:council-history` — Browse past sessions
+Skills are namespaced: `/claude-council:council`, `/claude-council:council-debate`, `/claude-council:council-history`. You can also just say "ask the council about..." and Claude will invoke the right skill automatically. Session directories are created on first use via a SessionStart hook.
 
-Session directories are created automatically on first use via a SessionStart hook.
+Update to the latest version anytime with `/plugin marketplace update claude-council`.
 
-### Script Install (Alternative)
-
-If you prefer a traditional install, or want symlink mode for development:
+### Script Install
 
 ```bash
 git clone https://github.com/Erreon/claude-council.git
@@ -122,9 +117,9 @@ The install script:
 - Checks for Python 3 (optional, for CLI helper)
 - Reports what's ready and what's missing
 
-Use `./install.sh --copy` if you prefer to copy files instead of symlinking.
+Use `./install.sh --copy` if you prefer independent copies instead of symlinks.
 
-With script install, skills are available at their short names: `/council`, `/council-debate`, `/council-history`.
+Skills are available at their short names: `/council`, `/council-debate`, `/council-history`.
 
 ### Manual Installation
 
@@ -177,7 +172,7 @@ If you're using WSL, it should work the same as Linux. Native Windows may requir
 
 ### `/council` — Ask the Council
 
-> **Note:** If installed via plugin, use `/claude-council:council` instead of `/council` (and similarly for the other skills). The examples below use the short names for readability.
+> **Note:** If installed via plugin, the slash command is `/claude-council:council` instead of `/council`. Natural language like "ask the council" works with any install method — Claude matches intent to the skill description automatically. The examples below use the short names for readability.
 
 ```
 /council Should we use Postgres or SQLite for this project?
