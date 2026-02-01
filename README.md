@@ -111,7 +111,7 @@ There are three ways to install. All support natural language triggering — say
 /plugin install claude-council@claude-council
 ```
 
-Skills are namespaced: `/claude-council:council`, `/claude-council:council-debate`, `/claude-council:council-history`. You can also just say "ask the council about..." and Claude will invoke the right skill automatically. Session directories are created on first use via a SessionStart hook.
+Skills are namespaced: `/claude-council:council`, `/claude-council:council-debate`, `/claude-council:council-history`, `/claude-council:council-help`. You can also just say "ask the council about..." and Claude will invoke the right skill automatically. Session directories are created on first use via a SessionStart hook.
 
 Update to the latest version anytime with `/plugin marketplace update claude-council`.
 
@@ -132,7 +132,7 @@ The install script:
 
 Use `./install.sh --copy` if you prefer independent copies instead of symlinks.
 
-Skills are available at their short names: `/council`, `/council-debate`, `/council-history`.
+Skills are available at their short names: `/council`, `/council-debate`, `/council-history`, `/council-help`.
 
 ### Manual Installation
 
@@ -142,12 +142,14 @@ Skills are available at their short names: `/council`, `/council-debate`, `/coun
 mkdir -p ~/.claude/skills/council
 mkdir -p ~/.claude/skills/council-debate
 mkdir -p ~/.claude/skills/council-history
+mkdir -p ~/.claude/skills/council-help
 
 cp skills/council/SKILL.md ~/.claude/skills/council/SKILL.md
 cp skills/council/council_cli.py ~/.claude/skills/council/council_cli.py
 chmod +x ~/.claude/skills/council/council_cli.py
 cp skills/council-debate/SKILL.md ~/.claude/skills/council-debate/SKILL.md
 cp skills/council-history/SKILL.md ~/.claude/skills/council-history/SKILL.md
+cp skills/council-help/SKILL.md ~/.claude/skills/council-help/SKILL.md
 ```
 
 **2. Create the session storage directories:**
@@ -288,6 +290,10 @@ What the advisors agree on. Kept short (2-4 sentences) and honest — if consens
 
 The single most important unresolved trade-off. Framed as a clear choice you need to make, not a hedge. This is the decision the council is handing back to you.
 
+#### Tip
+
+Each briefing and debate verdict ends with a rotating tip that surfaces features you might not know about — archiving, rating, outcome tracking, fun mode, etc. Run `/council-help` for the full list.
+
 **Follow-up replies:** After a briefing, just reply normally — the council will re-dispatch with your pushback included and note any position shifts. You can also do targeted drill-downs: reference a specific disagreement row, action item, or advisor's position to get focused follow-up instead of a full re-run.
 
 **Rate a session:**
@@ -311,6 +317,14 @@ Statuses: `followed`, `partial`, `ignored`, `wrong`. Outcomes feed back into his
 ```
 
 Assigns two agents to argue opposing positions and one as independent analyst. Runs two rounds (opening arguments + rebuttals), then delivers a verdict. Debate sessions are saved to the same session directory as council sessions, so the historian can find them and `/council-history` can list them.
+
+### `/council-help` — Quick Reference
+
+```
+/council-help
+```
+
+Prints a cheat sheet of all commands, flags, follow-up patterns, and personas. No agents dispatched — just a fast reference card.
 
 ### `/council-history` — Session Management
 
@@ -525,6 +539,7 @@ All subcommands output JSON to stdout. Errors go to stderr.
 | `similarity` | Check response similarity | `echo '{...}' \| council_cli.py similarity --stdin` |
 | `agents` | Check which agent CLIs are on PATH | `council_cli.py agents` |
 | `doctor` | Full health check (versions, dirs, helpers) | `council_cli.py doctor` |
+| `tip` | Return a random tip | `council_cli.py tip` |
 
 ### Diagnostics
 

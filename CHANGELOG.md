@@ -123,6 +123,26 @@ The `/council-debate` skill now has the same auto-detection logic, so debates al
 
 ---
 
+## Tip Rotation & Quick Reference — v1.2.0
+
+Users kept discovering features late — outcome tracking, fun mode, archiving — because they were buried in the skill files. This release surfaces those features directly in the output.
+
+### Tip Rotation
+
+Every council briefing and debate verdict now ends with a rotating tip:
+
+```
+> **Tip:** /rate 1-5 to rate this session — higher-rated advice surfaces more in future councils
+```
+
+Ten tips cover the features most likely to be missed: archiving, rating, outcome tracking, fun mode, custom personas, raw response viewing, and `/council-help`. The CLI helper picks tips randomly via `council_cli.py tip`; if the CLI isn't available, the mediator picks from an inline list in the skill file. Tips rotate so consecutive sessions show different ones.
+
+### `/council-help`
+
+New lightweight skill — no dispatch, no agents. Prints a cheat sheet covering all commands, flags, post-session actions, follow-up patterns, diagnostics, configuration switching, and the full persona catalog. Invoked with `/council-help` or by asking "how do I use the council?"
+
+---
+
 ## What's Next
 
 Open areas for future work:
