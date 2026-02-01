@@ -52,7 +52,7 @@ Each CLI tool requires its own account and authentication. See their respective 
 
 ### Using Different Tools
 
-The agents are defined by their CLI commands in `skills/council/skill.md`. You can swap any agent for a different tool by editing the dispatch commands:
+The agents are defined by their CLI commands in `skills/council/SKILL.md`. You can swap any agent for a different tool by editing the dispatch commands:
 
 ```bash
 # Default: OpenAI Codex
@@ -83,10 +83,34 @@ You don't need three different LLMs. If you only have Claude Code installed, you
 
 ## Installation
 
-### Quick Install (macOS/Linux)
+### Plugin Install (Recommended)
+
+The easiest way to install. In Claude Code:
+
+```
+/plugin install claude-council
+```
+
+Or add the repo as a marketplace source first:
+
+```
+/plugin marketplace add Erreon/claude-council
+/plugin install claude-council@claude-council
+```
+
+Skills will be available as:
+- `/claude-council:council` — Ask the council
+- `/claude-council:council-debate` — Structured debate
+- `/claude-council:council-history` — Browse past sessions
+
+Session directories are created automatically on first use via a SessionStart hook.
+
+### Script Install (Alternative)
+
+If you prefer a traditional install, or want symlink mode for development:
 
 ```bash
-git clone https://github.com/yourusername/claude-council.git
+git clone https://github.com/Erreon/claude-council.git
 cd claude-council
 ./install.sh
 ```
@@ -98,26 +122,24 @@ The install script:
 - Checks for Python 3 (optional, for CLI helper)
 - Reports what's ready and what's missing
 
-Use `./install.sh --copy` if you prefer to copy files instead of symlinking (e.g., if you don't plan to keep the repo cloned).
+Use `./install.sh --copy` if you prefer to copy files instead of symlinking.
+
+With script install, skills are available at their short names: `/council`, `/council-debate`, `/council-history`.
 
 ### Manual Installation
-
-If you prefer not to use the script, or you're on a platform where it doesn't work:
 
 **1. Copy the skill files to your Claude Code skills directory:**
 
 ```bash
-# Create the skill directories
 mkdir -p ~/.claude/skills/council
 mkdir -p ~/.claude/skills/council-debate
 mkdir -p ~/.claude/skills/council-history
 
-# Copy the files
-cp skills/council/skill.md ~/.claude/skills/council/skill.md
+cp skills/council/SKILL.md ~/.claude/skills/council/SKILL.md
 cp skills/council/council_cli.py ~/.claude/skills/council/council_cli.py
 chmod +x ~/.claude/skills/council/council_cli.py
-cp skills/council-debate/skill.md ~/.claude/skills/council-debate/skill.md
-cp skills/council-history/skill.md ~/.claude/skills/council-history/skill.md
+cp skills/council-debate/SKILL.md ~/.claude/skills/council-debate/SKILL.md
+cp skills/council-history/SKILL.md ~/.claude/skills/council-history/SKILL.md
 ```
 
 **2. Create the session storage directories:**
@@ -141,8 +163,6 @@ npm install -g @google/gemini-cli
 
 **4. Authenticate each CLI tool** according to its own documentation.
 
-**5. Verify** by opening Claude Code and typing `/council test` — you should see the skill activate.
-
 ### Windows
 
 The skills haven't been tested on Windows. The skill files themselves are just Markdown instructions — they should work if:
@@ -156,6 +176,8 @@ If you're using WSL, it should work the same as Linux. Native Windows may requir
 ## Usage
 
 ### `/council` — Ask the Council
+
+> **Note:** If installed via plugin, use `/claude-council:council` instead of `/council` (and similarly for the other skills). The examples below use the short names for readability.
 
 ```
 /council Should we use Postgres or SQLite for this project?
@@ -387,7 +409,7 @@ The project includes an optional Python CLI tool (`council_cli.py`) that offload
 
 **How it works:** The skill detects if Python 3 and the CLI file are available at the start of each session. If present, it delegates logic operations to the CLI. If not, everything falls back to the existing LLM-based processing — the skill works identically either way.
 
-**Installation:** Automatic. The `install.sh` script symlinks (or copies with `--copy`) `council_cli.py` alongside `skill.md`. No PATH changes, no pip, no venv.
+**Installation:** Automatic. The `install.sh` script symlinks (or copies with `--copy`) `council_cli.py` alongside `SKILL.md`. No PATH changes, no pip, no venv.
 
 ### Subcommands
 
@@ -413,8 +435,8 @@ All subcommands output JSON to stdout. Errors go to stderr.
 
 The skills are just Markdown files that instruct Claude Code what to do. You can:
 
-- **Swap agents** — Change the CLI commands in `skills/council/skill.md` to use different LLM tools
-- **Add personas** — Edit the persona catalog in `skills/council/skill.md`
+- **Swap agents** — Change the CLI commands in `skills/council/SKILL.md` to use different LLM tools
+- **Add personas** — Edit the persona catalog in `skills/council/SKILL.md`
 - **Change auto-assignment** — Edit the topic-to-persona mapping
 - **Add more agents** — Expand from 3 to 4+ by adding more dispatch commands and updating the synthesis format
 - **Change storage paths** — Edit the directory paths in the skill files

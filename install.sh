@@ -102,15 +102,15 @@ install_file() {
 echo ""
 echo "Installing skills..."
 
-install_file "$SCRIPT_DIR/skills/council/skill.md" "$SKILLS_DIR/council/skill.md"
+install_file "$SCRIPT_DIR/skills/council/SKILL.md" "$SKILLS_DIR/council/SKILL.md"
 install_file "$SCRIPT_DIR/skills/council/council_cli.py" "$SKILLS_DIR/council/council_cli.py"
 chmod +x "$SKILLS_DIR/council/council_cli.py" 2>/dev/null || chmod +x "$SCRIPT_DIR/skills/council/council_cli.py"
 echo "  [OK] /council (+ CLI helper)"
 
-install_file "$SCRIPT_DIR/skills/council-debate/skill.md" "$SKILLS_DIR/council-debate/skill.md"
+install_file "$SCRIPT_DIR/skills/council-debate/SKILL.md" "$SKILLS_DIR/council-debate/SKILL.md"
 echo "  [OK] /council-debate"
 
-install_file "$SCRIPT_DIR/skills/council-history/skill.md" "$SKILLS_DIR/council-history/skill.md"
+install_file "$SCRIPT_DIR/skills/council-history/SKILL.md" "$SKILLS_DIR/council-history/SKILL.md"
 echo "  [OK] /council-history"
 
 # Check Python 3 availability (informational only)
