@@ -11,7 +11,7 @@
       "name": "claude-council",
       "source": "./",
       "description": "Multi-AI council system — get independent perspectives from Codex, Gemini, and Claude on any decision, then receive a synthesized briefing from a neutral mediator with institutional memory.",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "author": {
         "name": "Jason Carpentier"
       },
