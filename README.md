@@ -170,6 +170,29 @@ The skills haven't been tested on Windows. The skill files themselves are just M
 
 If you're using WSL, it should work the same as Linux. Native Windows may require editing the CLI commands in the skill files to use Windows-compatible quoting and paths.
 
+## Recommended Settings
+
+The council dispatches multiple CLI tools and manages session files, which can trigger frequent permission prompts. Adding these to your `~/.claude/settings.json` under `permissions.allow` makes sessions much smoother:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *council_cli*)",
+      "Bash(echo * | codex *)",
+      "Bash(gemini *)",
+      "Bash(claude -p *)",
+      "Bash(mkdir -p */.claude/council/*)",
+      "Bash(mkdir -p */Documents/council*)"
+    ]
+  }
+}
+```
+
+These allow the council to dispatch agents and manage session directories without asking for approval each time. You may also want to add general-purpose entries like `Bash(git *)` and `Bash(gh *)` if you haven't already.
+
+> **⚠️ Security note:** These permissions allow Claude to send prompts to external AI services (OpenAI, Google, Anthropic) without asking for confirmation. The council skill is designed to never include sensitive data like API keys or credentials in agent prompts, but you should review the skill files if you have concerns. If you'd prefer to approve each dispatch manually, skip these settings — the council works fine without them, it just asks for permission before each agent call.
+
 ## Usage
 
 ### `/council` — Ask the Council
