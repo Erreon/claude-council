@@ -57,6 +57,8 @@ When recapping a session, present it concisely:
 - **Claude:** [1 sentence]
 
 **Outcome:** [Consensus / Split / Debate escalated] — [1-2 sentence summary of where it landed]
+[**Result:** [status] — [note] (if outcome annotation exists)]
+**Rating:** [N/5 or "Unrated"]
 
 ---
 

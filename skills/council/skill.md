@@ -5,7 +5,7 @@ description: Use when the user wants multiple AI perspectives on a decision, arc
 
 # Council
 
-Consult three external AI agents (Codex, Gemini, Claude) for independent perspectives — each assigned a distinct persona — then synthesize their responses as a neutral mediator with institutional memory.
+Consult three external AI agents (Codex, Gemini, Claude) for independent perspectives — each assigned a distinct persona — then synthesize their responses into an actionable briefing that preserves disagreement, surfaces tensions, and gives the user concrete next steps. The mediator has institutional memory and weights past sessions by user ratings.
 
 ## When to Use
 
@@ -109,18 +109,19 @@ Default is **staggered** because the `claude` CLI is the heaviest process and mo
 
 ### 0. Historian Check (Mediator's Memory)
 
-Before framing the question, the mediator checks for relevant past council sessions:
+Before framing the question, the mediator checks for relevant past council sessions. Sessions with higher user ratings (from `/rate`) are weighted more heavily in relevance scoring — a 5-star session with keyword matches ranks above a 1-star session with the same matches. Unrated sessions default to 3/5.
 
 1. Read the list of JSON files in `~/.claude/council/sessions/`
-2. Scan topic names and questions for relevance to the current question
+2. Scan topic names and questions for relevance to the current question, weighted by rating
 3. If a related session exists, read its synthesis/outcome and include a **Prior Council Context** block in the agent prompts:
 
 ```
 PRIOR COUNCIL CONTEXT:
 On [date], the council discussed "[topic]". Key outcome: [1-2 sentence summary of the synthesis/final position]. [Note any decisions made or positions that shifted.]
+[If outcome annotation exists: "Result: [status] — [note]"]
 ```
 
-If no related sessions exist, skip this block. Don't force connections where there aren't any.
+If no related sessions exist, skip this block. Don't force connections where there aren't any. If a related session has an outcome annotation, always include it — this is the most valuable historical signal.
 
 This gives the council institutional memory — agents can build on, challenge, or reference past discussions rather than starting from zero every time.
 
@@ -170,7 +171,7 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
    - **staggered** (default): Launch Codex + Gemini in parallel, wait for both to finish, then launch Claude alone
    - **sequential**: Launch Codex, wait for it to finish, then Gemini, wait, then Claude
 
-2. Synthesize the three responses as a neutral mediator (not a fourth opinion)
+2. Synthesize the three responses — preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average)
 
 3. Save the JSON checkpoint to `~/.claude/council/sessions/`
 
@@ -195,6 +196,13 @@ QUESTION:
 [the user's question]
 
 Respond concisely (under 500 words). Focus on your strongest recommendation and key reasoning, filtered through your assigned role.
+
+For each key claim, tag it with one of:
+- [ANCHORED] — based on specific data, evidence, or established fact
+- [INFERRED] — logical deduction from known information
+- [SPECULATIVE] — opinion, gut feel, or hypothesis without direct evidence
+
+End your response with a single sentence starting with "RECOMMENDATION: I recommend..." that captures your core advice.
 ```
 
 **Agent prompt template (for follow-up rounds):**
@@ -218,6 +226,10 @@ THE MEDIATOR SAID: [mediator's synthesis from the briefing]
 THE USER NOW SAYS: [user's follow-up or pushback]
 
 Respond to the user's follow-up. You may revise your position if the user raises a good point, or defend it if you still disagree. Stay concise (under 300 words).
+
+Tag key claims as [ANCHORED], [INFERRED], or [SPECULATIVE].
+
+End with a single sentence starting with "RECOMMENDATION: I recommend..." that captures your updated core advice.
 ```
 
 **Synthesis format (the subagent must use this exactly):**
@@ -228,17 +240,33 @@ Respond to the user's follow-up. You may revise your position if the user raises
 *Personas: Codex as [Persona], Gemini as [Persona], Claude as [Persona]*
 [*Prior context: On [date], the council discussed "[topic]" — [1 sentence outcome]*]  ← only if historian found relevant history
 
-**Codex (OpenAI) as [Persona]:** [2-3 sentence summary of their position]
+**Codex (OpenAI) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
 
-**Gemini (Google) as [Persona]:** [2-3 sentence summary of their position]
+**Gemini (Google) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
 
-**Claude (Anthropic) as [Persona]:** [2-3 sentence summary of their position]
+**Claude (Anthropic) as [Persona]:** [2-3 sentence summary of their position + their RECOMMENDATION]
 
-**Agreement:** [What they agree on]
+**Evidence Audit:** [If any consensus point or action item rests primarily on [SPECULATIVE] claims from multiple advisors, flag it here: "⚠ [topic] — consensus is speculative (no advisor provided anchored evidence)." If all key claims are anchored or inferred, write "All key claims grounded." Keep to 1-2 sentences.]
 
-**Disagreement:** [Where they diverge and why — note when disagreements stem from persona differences vs genuine analytical divergence]
+**What To Do Next:**
+- [ ] [Concrete action item starting with a verb — the single most important next step]
+- [ ] [Second action item — verb-first, specific and actionable]
+- [ ] [Third action item (optional) — only if genuinely distinct from the first two]
 
-**Mediator's summary:** [Neutral synthesis of the strongest points from each side. Highlight the key tension or trade-off the user needs to decide on. Do NOT pick a winner — present the decision clearly so the user can choose.]
+These should be the 2-3 things the user should actually do based on the council's input. Not summaries — actions.
+
+**Disagreement Matrix:**
+
+| Topic | Codex ([Persona]) | Gemini ([Persona]) | Claude ([Persona]) |
+|-------|-------------------|--------------------|--------------------|
+| [Key issue 1] | [2-5 word position] | [2-5 word position] | [2-5 word position] |
+| [Key issue 2] | [position] | [position] | [position] |
+
+Note which disagreements stem from persona framing vs genuine analytical divergence.
+
+**Consensus:** [What the council agrees on. 2-4 sentences maximum. Don't inflate thin agreement — if consensus is weak, say so.]
+
+**Key Tension:** [The single most important unresolved trade-off. One paragraph. This is the decision the user actually needs to make. Frame it as a clear choice, not a hedge.]
 
 ---
 
@@ -264,6 +292,16 @@ After a council briefing, the user may reply with follow-up questions, pushback,
 4. Present the returned briefing to the user
 
 This keeps the council conversational while keeping all raw responses out of the main context. The user can go back and forth as many rounds as they want.
+
+#### Targeted Drill-Down
+
+When the user's follow-up references a specific section of the briefing — a disagreement row, the key tension, an action item, or an individual advisor's position — treat it as a **targeted drill-down** rather than a full re-dispatch:
+
+- **"Tell me more about the key tension"** or **"Expand on action item 2"** → Ask all three advisors to elaborate specifically on that point, staying in persona. The follow-up prompt should quote the relevant section and ask for deeper analysis.
+- **"I disagree with Codex on [topic]"** or **"Why does Gemini think X?"** → Route to only that advisor for a deeper explanation. Other advisors can optionally respond if the mediator judges their perspective is relevant.
+- **"Debate the key tension"** → Escalate to `/council-debate` with the tension as the motion. Suggest this option but don't auto-escalate.
+
+The drill-down follow-up uses the same subagent dispatch and JSON checkpoint flow. The difference is in the prompt framing — targeted prompts produce more focused, useful responses than repeating the full question.
 
 ### 6. Optional: Deep Dive
 
@@ -295,6 +333,8 @@ After every synthesis (initial briefing or follow-up round), save a JSON checkpo
     "claude": "The User Advocate"
   },
   "prior_context": "Reference to related past session, if any (null if none)",
+  "rating": null,
+  "outcome": null,
   "rounds": [
     {
       "round": 1,
@@ -332,6 +372,73 @@ The Markdown file should contain:
 
 Also update the JSON checkpoint to set `"archived": true`.
 
+## Rating Sessions
+
+After any council briefing, the user can rate the session's usefulness:
+
+```
+/rate 5
+/rate 3 2026-01-31-1430-local-llm
+```
+
+- Rating is 1-5 (clamped). If no session ID is given, rates the most recent active session.
+- The rating is stored in the session JSON as `"rating": N`.
+- Higher-rated sessions are weighted more heavily by the historian when retrieving prior context. This closes the feedback loop — good advice surfaces more, bad advice fades.
+- Unrated sessions default to 3/5 for scoring purposes.
+
+When the user rates a session, read the JSON, set `"rating"` to the value, and save it back.
+
+## Outcome Tracking
+
+After a council session has played out in practice, the user can annotate what actually happened:
+
+```
+/council-outcome followed "We went with microservices and it's working well"
+/council-outcome partial 2026-01-31-1430-local-llm "Set up Ollama but haven't added it to the council yet"
+/council-outcome wrong "The consensus recommendation failed — should have listened to the Contrarian"
+```
+
+**Format:** `/council-outcome <status> [session_id] "<note>"`
+
+**Statuses:**
+- `followed` — Took the council's advice, it worked
+- `partial` — Partially followed, mixed results
+- `ignored` — Didn't follow the advice (record why)
+- `wrong` — Followed the advice and it was bad
+
+If no session ID is given, annotates the most recent active session.
+
+**Storage:** Add to the session JSON:
+
+```json
+{
+  "outcome": {
+    "status": "followed",
+    "note": "We went with microservices and it's working well",
+    "date": "2026-02-15"
+  }
+}
+```
+
+**How outcomes feed back into the system:**
+
+1. **Historian weighting:** Sessions with `followed` outcomes get a boost (×1.2) in relevance scoring. Sessions with `wrong` outcomes get a penalty (×0.5). This compounds with the rating weight — a 5-star session that was later proven wrong gets demoted. A 2-star session that turned out to be prescient gets promoted.
+2. **Prior context enrichment:** When the historian surfaces a related past session that has an outcome annotation, include it in the PRIOR COUNCIL CONTEXT block: `"The council recommended X. Outcome: followed — [note]."`
+3. **Pattern detection:** If multiple sessions on similar topics have `wrong` outcomes, the mediator should flag this in the briefing: "Note: past council advice on similar topics has not aged well. Consider extra scrutiny."
+
+This closes the loop between advice and results. Without it, the council can confidently repeat mistakes.
+
+## Similarity Detection
+
+After collecting all agent responses (before synthesis), compare them for excessive overlap. If two advisors gave highly similar responses (>60% word overlap via Jaccard similarity on word sets), insert a warning before the synthesis:
+
+> **Similarity Warning:** The following advisors gave highly overlapping responses:
+> - **The Pragmatist** and **The Systems Thinker**: 72% overlap
+>
+> Consider using more diverse personas or rephrasing the question.
+
+This addresses the council's own feedback that multi-model doesn't guarantee diverse perspectives — sometimes different agents converge on the same heuristics. The warning helps the user decide whether to re-run with different personas.
+
 ## Important Notes
 
 - **Timeout:** Give each agent up to 60 seconds. If one times out, note it and proceed with the others. The previous 120-second timeout caused resource contention and lockups on some machines.
@@ -339,6 +446,6 @@ Also update the JSON checkpoint to set `"archived": true`.
 - **Context limits:** Keep the prompt self-contained. Don't assume the other agents have access to local files — include relevant snippets directly in the prompt.
 - **No code execution:** This skill is for consultation only. Don't ask the other agents to write or modify files. If the council reaches a conclusion that involves code changes, the mediator handles implementation after the session.
 - **Privacy:** Don't send sensitive data (API keys, credentials, personal info) to other agents. Strip these from any context before dispatching.
-- **Mediator neutrality:** The current Claude instance is the mediator. It does NOT add its own opinion as a council member. The separate Claude CLI call is the council member. Keep these roles distinct.
-- **Mediator as Historian:** The mediator also serves as the council's institutional memory. Before each session, it checks past sessions for relevant context and includes it in agent prompts. This is a factual role (reporting what was previously discussed), not an opinion role — the mediator still does not advocate for any position.
+- **Mediator role:** The current Claude instance is the mediator. It does NOT add its own opinion as a council member. The separate Claude CLI call is the council member. Keep these roles distinct. The mediator's job is to preserve and surface disagreement, not to smooth it into bland consensus — the most valuable output is often where advisors diverge.
+- **Mediator as Historian:** The mediator also serves as the council's institutional memory. Before each session, it checks past sessions for relevant context (weighted by user rating) and includes it in agent prompts. This is a factual role (reporting what was previously discussed), not an opinion role — the mediator still does not advocate for any position.
 - **Persona consistency:** Once personas are assigned for a session, they persist across all follow-up rounds. Don't reassign personas mid-session.
