@@ -2,7 +2,7 @@
 
 A multi-AI council system for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Ask a question, get independent perspectives from multiple AI models, and receive a synthesized briefing from a neutral mediator.
 
-Each council member is assigned a **persona** that shapes their perspective, creating productive friction by design. The mediator has **institutional memory** — it checks past sessions for relevant context before each new discussion.
+Each council member is assigned a **persona** that shapes their perspective, creating productive friction by design. The mediator has **institutional memory** — it checks past sessions for relevant context (weighted by user ratings) before each new discussion. Agents tag their claims by evidence level, and the briefing includes actionable next steps, a disagreement matrix, and an evidence audit.
 
 > **Platform note:** This was built and tested on macOS. The skills are Markdown files that instruct Claude Code how to call CLI tools, so they should work on Linux as-is. Windows users may need to adjust the CLI commands in the skill files (shell quoting, paths, etc.).
 
@@ -93,9 +93,12 @@ cd claude-council
 
 The install script:
 - Checks which CLI tools are installed
-- Copies skill files to `~/.claude/skills/`
+- Symlinks skill files to `~/.claude/skills/` (edits in either location stay in sync)
 - Creates session and archive directories
+- Checks for Python 3 (optional, for CLI helper)
 - Reports what's ready and what's missing
+
+Use `./install.sh --copy` if you prefer to copy files instead of symlinking (e.g., if you don't plan to keep the repo cloned).
 
 ### Manual Installation
 
@@ -111,6 +114,8 @@ mkdir -p ~/.claude/skills/council-history
 
 # Copy the files
 cp skills/council/skill.md ~/.claude/skills/council/skill.md
+cp skills/council/council_cli.py ~/.claude/skills/council/council_cli.py
+chmod +x ~/.claude/skills/council/council_cli.py
 cp skills/council-debate/skill.md ~/.claude/skills/council-debate/skill.md
 cp skills/council-history/skill.md ~/.claude/skills/council-history/skill.md
 ```
@@ -157,10 +162,11 @@ If you're using WSL, it should work the same as Linux. Native Windows may requir
 ```
 
 The mediator will:
-1. Check past sessions for relevant history
+1. Check past sessions for relevant history (weighted by rating and outcome)
 2. Auto-assign personas based on the topic
 3. Dispatch agents (staggered by default)
-4. Synthesize a briefing with agreement, disagreement, and key tensions
+4. Check for response similarity and warn if agents converge too much
+5. Synthesize a briefing with a disagreement matrix, evidence audit, and actionable next steps
 
 **Manual persona override:**
 ```
@@ -187,7 +193,21 @@ The mediator will:
 
 Randomly replaces one council seat with a fun persona (see [Fun Personas](#fun-personas) below).
 
-**Follow-up replies:** After a briefing, just reply normally — the council will re-dispatch with your pushback included and note any position shifts.
+**Follow-up replies:** After a briefing, just reply normally — the council will re-dispatch with your pushback included and note any position shifts. You can also do targeted drill-downs: reference a specific disagreement row, action item, or advisor's position to get focused follow-up instead of a full re-run.
+
+**Rate a session:**
+```
+/rate 5                                    # Rate the current session
+/rate 3 2026-01-31-1430-local-llm          # Rate a specific session
+```
+Higher-rated sessions are weighted more heavily by the historian. Unrated sessions default to 3/5.
+
+**Track outcomes:**
+```
+/council-outcome followed "Went with microservices, working well"
+/council-outcome wrong "Should have listened to the Contrarian"
+```
+Statuses: `followed`, `partial`, `ignored`, `wrong`. Outcomes feed back into historian weighting — advice that was proven wrong gets demoted in future relevance scoring.
 
 ### `/council-debate` — Structured Debate
 
@@ -195,7 +215,7 @@ Randomly replaces one council seat with a fun persona (see [Fun Personas](#fun-p
 /council-debate Monolith vs microservices for a 3-person team
 ```
 
-Assigns two agents to argue opposing positions and one as independent analyst. Runs two rounds (opening arguments + rebuttals), then delivers a verdict.
+Assigns two agents to argue opposing positions and one as independent analyst. Runs two rounds (opening arguments + rebuttals), then delivers a verdict. Debate sessions are saved to the same session directory as council sessions, so the historian can find them and `/council-history` can list them.
 
 ### `/council-history` — Session Management
 
@@ -275,19 +295,25 @@ Sessions are saved automatically and can be archived for long-term reference.
 | `~/.claude/council/sessions/` | JSON | Working data — auto-saved after every round |
 | `~/Documents/council/` | Markdown | Archive — human-readable, created on request |
 
-**Auto-save** happens after every synthesis. Each JSON file contains full agent responses, persona assignments, prior context references, and mediator synthesis.
+**Auto-save** happens after every synthesis — both `/council` and `/council-debate` sessions. Each JSON file contains full agent responses, persona/position assignments, prior context references, and mediator synthesis or verdict.
+
+**Rate** sessions 1-5 with `/rate`. Higher-rated sessions are weighted more heavily by the historian.
+
+**Track outcomes** with `/council-outcome` after advice plays out in practice. Outcomes feed back into historian scoring.
 
 **Archive** with "save this" or "archive this" after a session. Creates a formatted Markdown file and marks the JSON as archived.
 
-**Browse sessions** with `/council-history` — recap, view full transcripts, archive, delete, or resume past discussions.
+**Browse sessions** with `/council-history` — recap, view full transcripts, archive, delete, rate, annotate outcomes, or resume past discussions.
 
 ## The Mediator
 
-The running Claude Code instance acts as a neutral mediator with two responsibilities:
+The running Claude Code instance acts as a neutral mediator with three responsibilities:
 
-1. **Synthesizer** — Presents agreement, disagreement, and key tensions without injecting its own opinion. The separate Claude CLI call is the council member; the mediator is not.
+1. **Synthesizer** — Produces a structured briefing with a disagreement matrix, evidence audit, and actionable next steps. Preserves disagreement rather than smoothing it into bland consensus. The separate Claude CLI call is the council member; the mediator is not.
 
-2. **Historian** — Before each session, checks past sessions for relevant context and includes it in agent prompts. This gives the council institutional memory across conversations.
+2. **Historian** — Before each session, checks past sessions for relevant context (weighted by user ratings and outcome annotations) and includes it in agent prompts. Sessions rated highly or with positive outcomes surface more; sessions marked `wrong` get demoted. This gives the council institutional memory that improves over time.
+
+3. **Quality monitor** — Checks agent responses for excessive similarity before synthesis. If two advisors converge too much (>60% overlap), the mediator flags it so the user can consider re-running with more diverse personas.
 
 ## Context Efficiency
 
@@ -314,6 +340,74 @@ Council dispatch runs inside a subagent, so only the final briefing (~300 words)
 ```
 /council-debate Building our own auth vs using Auth0
 ```
+
+### Example Briefing Output
+
+Here's what a council briefing looks like. Each advisor tags claims by evidence level and ends with a concrete recommendation. The mediator synthesizes everything into a structured format:
+
+---
+
+**Council Briefing: Real-Time Updates for Small SaaS**
+*Personas: Codex as The Contrarian, Gemini as The Pragmatist, Claude as The Systems Thinker*
+
+**Codex (OpenAI) as The Contrarian:** Challenges the assumption that real-time is even needed — most "real-time" features are fine with 5-second polling and the complexity cost of WebSockets is rarely justified at 500 users. RECOMMENDATION: I recommend starting with simple polling and only upgrading if users actually complain about latency.
+
+**Gemini (Google) as The Pragmatist:** SSE is the pragmatic middle ground — simpler than WebSockets, built on HTTP, works through proxies, and handles the one-way server-to-client push that covers 90% of real-time use cases. RECOMMENDATION: I recommend SSE with a polling fallback for older clients.
+
+**Claude (Anthropic) as The Systems Thinker:** WebSockets create hidden operational complexity — connection state management, reconnection logic, load balancer configuration, and debugging becomes harder since traffic doesn't show up in standard HTTP logs. RECOMMENDATION: I recommend SSE for notifications and polling for data sync, avoiding WebSockets entirely at this scale.
+
+**Evidence Audit:** All key claims grounded. Codex's "rarely justified" claim is [INFERRED] from scale analysis rather than benchmarked data, but the reasoning is sound.
+
+**What To Do Next:**
+- [ ] Prototype SSE for your highest-priority real-time feature (notifications or live updates) and measure actual latency
+- [ ] Load test with 500 concurrent SSE connections on your current infrastructure to confirm it handles the connection count
+- [ ] Set up a polling fallback endpoint so clients degrade gracefully if SSE connections drop
+
+**Disagreement Matrix:**
+
+| Topic | Codex (Contrarian) | Gemini (Pragmatist) | Claude (Systems Thinker) |
+|-------|-------------------|--------------------|--------------------|
+| Best approach | Polling is enough | SSE is the sweet spot | SSE + polling hybrid |
+| WebSockets | Overkill at this scale | Unnecessary complexity | Avoid entirely |
+| When to upgrade | Only if users complain | When you need bidirectional | Never at 500 users |
+
+The disagreement on polling vs SSE is genuine analytical divergence — Codex questions the premise while Gemini and Claude accept real-time is needed but differ on implementation.
+
+**Consensus:** All three advisors agree WebSockets are unnecessary at 500 users and would add complexity without meaningful benefit. The operational overhead (connection management, load balancer config, debugging) outweighs any latency advantage at this scale.
+
+**Key Tension:** Do you invest in SSE now (slightly more work upfront, cleaner real-time experience) or start with polling (faster to ship, but may need replacement later if latency matters)? This is a bet on whether your users will actually notice the difference between 200ms and 5s updates.
+
+---
+
+## CLI Helper (Optional)
+
+The project includes an optional Python CLI tool (`council_cli.py`) that offloads deterministic logic from the skill's LLM processing. It saves tokens and improves consistency for operations like parsing flags, assigning personas, building prompts, and managing session files.
+
+**Requirements:** Python 3 (any version). No external dependencies — stdlib only.
+
+**How it works:** The skill detects if Python 3 and the CLI file are available at the start of each session. If present, it delegates logic operations to the CLI. If not, everything falls back to the existing LLM-based processing — the skill works identically either way.
+
+**Installation:** Automatic. The `install.sh` script symlinks (or copies with `--copy`) `council_cli.py` alongside `skill.md`. No PATH changes, no pip, no venv.
+
+### Subcommands
+
+All subcommands output JSON to stdout. Errors go to stderr.
+
+| Subcommand | Purpose | Example |
+|---|---|---|
+| `parse` | Parse `/council` command flags | `council_cli.py parse --raw "/council --fun Should we use Redis?"` |
+| `topic` | Classify question topic | `council_cli.py topic --question "Should we use Redis?"` |
+| `assign` | Assign personas to agents | `council_cli.py assign --question "..." [--fun] [--personas "X,Y,Z"]` |
+| `prompt` | Build agent prompt | `council_cli.py prompt --persona "The Contrarian" --question "..."` |
+| `synthesis-prompt` | Build synthesis prompt | `echo '{...}' \| council_cli.py synthesis-prompt --question "..." --stdin` |
+| `session create` | Create new session | `council_cli.py session create --question "..." --topic "..."` |
+| `session load` | Load session by ID | `council_cli.py session load --id "..."` |
+| `session append` | Append round data | `echo '{...}' \| council_cli.py session append --id "..." --stdin` |
+| `session list` | List all sessions | `council_cli.py session list` |
+| `session rate` | Rate a session (1-5) | `council_cli.py session rate --id "..." --rating 4` |
+| `session outcome` | Annotate outcome | `council_cli.py session outcome --id "..." --status "implemented"` |
+| `historian` | Find related past sessions | `council_cli.py historian --question "..."` |
+| `similarity` | Check response similarity | `echo '{...}' \| council_cli.py similarity --stdin` |
 
 ## Customization
 
