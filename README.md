@@ -93,6 +93,8 @@ There are three ways to install. All support natural language triggering — say
 
 ### Plugin Install (Recommended)
 
+**Prerequisites:** You need at least one agent CLI tool installed and authenticated. See [Agent Configuration](#agent-configuration) above for setup instructions.
+
 ```
 /plugin marketplace add Erreon/claude-council
 /plugin install claude-council@claude-council
