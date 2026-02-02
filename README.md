@@ -113,7 +113,16 @@ There are three ways to install. All support natural language triggering — say
 
 Skills are namespaced: `/claude-council:council`, `/claude-council:council-debate`, `/claude-council:council-history`, `/claude-council:council-help`. You can also just say "ask the council about..." and Claude will invoke the right skill automatically. Session directories are created on first use via a SessionStart hook.
 
-Update to the latest version anytime with `/plugin marketplace update claude-council`.
+#### Updating
+
+To update to the latest version:
+
+1. Type `/plugin` in Claude Code
+2. Select **marketplace**
+3. Select **claude-council**
+4. Select **update marketplace**
+
+Or run the command directly: `/plugin marketplace update claude-council`.
 
 ### Script Install
 
