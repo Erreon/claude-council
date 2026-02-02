@@ -23,3 +23,31 @@ No mechanism exists for users to know a new plugin version is available. Third-p
 - Add version check to SessionStart hook (compare installed vs latest)
 - Print one-liner at session start when update is available
 - Recommend uninstall + reinstall as the reliable update path
+
+## UX Gaps
+
+Known friction points that don't have solutions yet.
+
+### No Progress Feedback During Dispatch
+
+When agents are running (10-60 seconds), the user sees a blank spinner with no indication of what's happening. No "Advisor 1 responded, waiting on 2 and 3..." — just silence. This is the biggest UX gap for new users who don't know if it's working or frozen. Unclear how to solve this given the subagent isolation model — the subagent can't stream partial output to the main conversation.
+
+### Rating Has No Nudge
+
+The historian feedback loop depends on users remembering to `/rate`, but nothing prompts them to do it. The rotating tips sometimes mention it, but that's passive. Options: add a "Was this useful? /rate 1-5" line to every briefing footer, or prompt after every Nth session. Risk: becomes annoying noise if overdone.
+
+### No Single-Agent Retry
+
+If one agent gives a garbage response or times out, the only option is re-running the entire council. There's no "re-run just Advisor 2" mechanism. Would need a way to load the session, identify which slot to re-dispatch, and splice the new response into the existing round before re-synthesizing.
+
+### Pre-Research Not Discoverable
+
+The mediator can do web searches and file reads before dispatch, feeding results as shared context to all agents. But nothing in the UX surfaces this — no flag, no help text, no prompt. Users would never know to say "research X first, then ask the council." Could be a `--research` flag or a mention in `/council-help`.
+
+### ~~Session JSON Schema Drift~~ (Fixed)
+
+Resolved: `normalize_legacy_keys()` in `council_cli.py` now handles `briefing` → `synthesis` rename, flattens `responses` arrays/dicts into `advisor_1/2/3` keys, and unwraps nested advisor objects into plain strings. `load_session()` calls normalization automatically so every read path gets clean data.
+
+### Shell Escaping on Long Context
+
+Agent prompts are passed through shell quoting (`echo "<PROMPT>" | codex exec`). Special characters, quotes, backticks, and large payloads can break dispatch. This is hard to fully solve since each CLI has different quoting rules. Potential mitigation: write prompts to temp files and pipe from file instead of inline echo.

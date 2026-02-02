@@ -330,7 +330,7 @@ def ensure_dirs():
 
 
 def normalize_legacy_keys(data):
-    """Remap old codex/gemini/claude keys to advisor_1/2/3 in-memory (non-destructive)."""
+    """Normalize session data in-memory: legacy keys, field names, response formats."""
     # Normalize personas dict
     personas = data.get("personas", {})
     if any(k in LEGACY_KEYS for k in personas):
@@ -350,20 +350,43 @@ def normalize_legacy_keys(data):
 
     # Normalize round data
     for rnd in data.get("rounds", []):
+        # Legacy advisor key remap (codex/gemini/claude → advisor_1/2/3)
         for old, new in LEGACY_KEY_MAP.items():
             if old in rnd and new not in rnd:
                 rnd[new] = rnd.pop(old)
+
+        # Normalize "briefing" → "synthesis" (schema drift fix)
+        if "briefing" in rnd and "synthesis" not in rnd:
+            rnd["synthesis"] = rnd.pop("briefing")
+
+        # Flatten "responses" array format → advisor_1/2/3 keys
+        if "responses" in rnd:
+            responses = rnd.pop("responses")
+            if isinstance(responses, list):
+                for i, resp in enumerate(responses):
+                    key = f"advisor_{i + 1}"
+                    if key not in rnd:
+                        rnd[key] = resp.get("response", "") if isinstance(resp, dict) else resp
+            elif isinstance(responses, dict):
+                for key, val in responses.items():
+                    if key not in rnd:
+                        rnd[key] = val.get("response", "") if isinstance(val, dict) else val
+
+        # Flatten nested advisor objects → plain strings
+        for key in ["advisor_1", "advisor_2", "advisor_3"]:
+            if key in rnd and isinstance(rnd[key], dict):
+                rnd[key] = rnd[key].get("response", "")
 
     return data
 
 
 def load_session(session_id):
-    """Load a session by ID, searching for matching file."""
+    """Load a session by ID, searching for matching file. Normalizes schema on read."""
     for f in SESSIONS_DIR.glob("*.json"):
         try:
             data = json.loads(f.read_text())
             if data.get("id") == session_id:
-                return data, f
+                return normalize_legacy_keys(data), f
         except (json.JSONDecodeError, KeyError):
             continue
     return None, None

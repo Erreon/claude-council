@@ -217,6 +217,33 @@ Updated `SKILL.md` subagent instructions to use the pipeline/finalize flow as th
 
 ---
 
+## Session Schema Normalization & Docs — v1.4.1
+
+A maintenance release focused on data integrity and documentation.
+
+### Session JSON Schema Normalization
+
+Session files written by different mediator sessions had drifted into inconsistent formats — some rounds used `briefing` instead of `synthesis`, some stored advisor responses as nested objects or arrays instead of plain strings. This meant "show full brief" and session history could silently fail to find data.
+
+Extended `normalize_legacy_keys()` in `council_cli.py` to handle all known variants:
+
+- **`briefing` → `synthesis`** — Renames the field to match the spec
+- **`responses` array** — Flattens `[{persona, response}, ...]` into `advisor_1/2/3` keys
+- **`responses` dict** — Flattens `{advisor_1: {persona, response}, ...}` into plain strings
+- **Nested advisor objects** — Unwraps `{persona, response}` dicts into plain response strings
+
+`load_session()` now calls normalization automatically, so every code path that reads a session gets clean data. Existing files aren't rewritten — normalization is in-memory on read.
+
+### README Tips & Tricks
+
+Added a Tips & Tricks section to the README with 8 patterns from real usage: framing questions around tensions, pushing back in follow-ups, feeding context for factual questions, picking personas manually, being suspicious of consensus, rating sessions, chaining sessions, and knowing when not to use the council.
+
+### UX Gap Tracking
+
+Documented 6 known UX friction points in TODO.md: no progress feedback during dispatch, rating has no nudge, no single-agent retry, pre-research not discoverable, shell escaping on long context, and the schema drift (now fixed).
+
+---
+
 ## What's Next
 
 Open areas for future work:

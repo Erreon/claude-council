@@ -522,6 +522,26 @@ When different providers are configured, the briefing switches to **"Label as Pe
 
 </details>
 
+## Tips & Tricks
+
+Getting perspectives is easy — getting *useful* perspectives takes a little technique. These patterns come from real usage and make a noticeable difference in output quality.
+
+**Frame questions around tensions, not topics.** "What database should I use?" gets generic advice. "I'm torn between Postgres for reliability and DynamoDB for zero-ops — I'm a solo founder with no DevOps time" gets the council actually fighting about something useful. The more specific the tradeoff, the sharper the output.
+
+**Push back in follow-ups.** Most of the value is in rounds 2 and 3, not round 1. Round 1 is each agent performing their persona. When you reply with "I disagree because..." or "but what about the case where..." — that's when agents start revising positions and the real insight surfaces. Don't treat it as one-shot.
+
+**Feed context for factual questions.** The agents reason from training data, not live sources. If your question depends on current data (market conditions, new tools, recent research), gather sources first and include them in your question. The mediator passes your full text as context to all three agents, so they reason over evidence instead of vibes.
+
+**Pick your own personas when stakes are high.** Auto-assignment is fine for casual questions. For something you're genuinely agonizing over, think about which perspectives would actually help: `--personas "Economist, Risk Analyst, Radical"` for a pricing decision, `--personas "Outsider, User Advocate, Craftsperson"` when you're too deep in the weeds.
+
+**Be suspicious of consensus.** When all three agents agree easily, that usually means the question was too simple or too well-framed toward an obvious answer. Use `/council-debate` to stress-test unanimous agreement. The council's most valuable output is often where advisors disagree, not where they converge.
+
+**Rate sessions and track outcomes.** This is the compound interest feature. `/rate 5` on sessions that helped, `/council-outcome wrong` on advice that failed — this feeds back into the historian. Over time, the council starts surfacing "last time we discussed something like this, the advice didn't age well." Institutional memory that gets more valuable the more you use it.
+
+**Chain sessions together.** Take the output of one council as input context for the next: "The council previously recommended X. I tried it for a week, here's what happened — should I adjust?" The historian does some of this automatically, but explicitly feeding prior results makes it sharper.
+
+**Know when NOT to use it.** The council is for decisions with genuine uncertainty. If you already know the answer, you'll just get validation — and that's a waste. If the question has a clear factual answer, just look it up. The council's strength is navigating tradeoffs where reasonable people disagree.
+
 ## CLI Helper (Optional)
 
 The project includes an optional Python CLI tool (`council_cli.py`) that offloads deterministic logic from the skill's LLM processing. It saves tokens and improves consistency for operations like parsing flags, assigning personas, building prompts, and managing session files.
