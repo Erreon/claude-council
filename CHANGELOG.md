@@ -185,6 +185,38 @@ This means "best high-end restaurants in New Orleans" now gets a Curator and an 
 
 ---
 
+## Pipeline & Finalize — v1.4.0
+
+The subagent was making ~13 separate Bash calls per council session — historian, assign, prompt (×3), session create, three agent dispatches, similarity, synthesis-prompt, session append, plus mkdir. Each one triggered a permission prompt (unless pre-approved in settings). Even with permissions configured, the sequential call overhead added latency.
+
+### Two New Combo Commands
+
+Added `pipeline` and `finalize` to `council_cli.py`. These compose existing internal logic into single calls that replace multiple steps:
+
+- **`pipeline`** — One call replaces: mkdir + historian + assign + prompt (×3) + session create. Takes the question, topic, flags, and context. Returns everything the subagent needs to dispatch agents: session ID, historian results, persona assignments, all three built prompts.
+
+- **`finalize`** — One call replaces: similarity + synthesis-prompt + session append. Takes agent responses on stdin, returns the synthesis prompt, similarity check, and saves the round to the session file.
+
+### Reduced Bash Calls
+
+The subagent flow went from ~13 Bash calls down to 5:
+
+1. `pipeline` (1 call)
+2. Three agent dispatches in parallel (3 calls, one permission batch)
+3. `finalize` (1 call)
+
+The individual commands (`historian`, `assign`, `prompt`, `similarity`, `synthesis-prompt`, `session create/append`) still work — they're used for follow-up rounds and edge cases. The pipeline/finalize path is the preferred default for initial dispatch.
+
+### Internal Refactor
+
+Extracted the core logic from each existing subcommand into internal functions (`_historian_logic`, `_assign_logic`, `_prompt_logic`, `_session_create_logic`, `_similarity_logic`, `_synthesis_prompt_logic`, `_session_append_logic`). Both the original subcommands and the new combo commands call the same internal functions, so behavior is identical.
+
+### Skill Update
+
+Updated `SKILL.md` subagent instructions to use the pipeline/finalize flow as the primary path. The CRITICAL RULES preamble now lists pipeline and finalize first, with individual commands documented as the fallback for follow-ups.
+
+---
+
 ## What's Next
 
 Open areas for future work:

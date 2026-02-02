@@ -19,7 +19,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # ---------------------------------------------------------------------------
 # Directories
@@ -410,6 +410,386 @@ def lookup_persona(name):
 
 
 # ---------------------------------------------------------------------------
+# Internal logic (shared by subcommands and pipeline/finalize)
+# ---------------------------------------------------------------------------
+
+def _historian_logic(question):
+    """Find past sessions related to a question. Returns dict with 'related' and 'query_keywords'."""
+    question_keywords = extract_keywords(question)
+    if not question_keywords:
+        return {"related": [], "query_keywords": [], "message": "no keywords extracted from question"}
+
+    sessions = list_sessions()
+    scored = []
+    for s in sessions:
+        session_text = f"{s['topic']} {s['question']}"
+        session_keywords = extract_keywords(session_text)
+        if not session_keywords:
+            continue
+        overlap = question_keywords & session_keywords
+        if overlap:
+            base_score = len(overlap) / len(question_keywords | session_keywords)
+
+            rating = s.get("rating") or 3
+            rating_weight = rating / 3.0
+
+            outcome = s.get("outcome")
+            outcome_weight = 1.0
+            if outcome and isinstance(outcome, dict):
+                status = outcome.get("status", "")
+                if status == "followed":
+                    outcome_weight = 1.2
+                elif status == "wrong":
+                    outcome_weight = 0.5
+                elif status == "partial":
+                    outcome_weight = 0.9
+                elif status == "ignored":
+                    outcome_weight = 0.8
+
+            weighted_score = base_score * rating_weight * outcome_weight
+
+            scored.append({
+                **s,
+                "relevance_score": round(weighted_score, 3),
+                "base_score": round(base_score, 3),
+                "rating_weight": round(rating_weight, 2),
+                "outcome_weight": outcome_weight,
+                "matching_keywords": sorted(overlap),
+            })
+
+    scored.sort(key=lambda x: x["relevance_score"], reverse=True)
+    related = [s for s in scored if s["relevance_score"] > 0.05][:3]
+
+    return {"related": related, "query_keywords": sorted(question_keywords)}
+
+
+def _assign_logic(question, topic=None, personas_str=None, fun=False, seats=3):
+    """Assign personas to agents. Returns dict with 'assignment', 'personas', 'agents', 'fun_applied'."""
+    question_lower = question.lower()
+
+    if personas_str:
+        names = [n.strip() for n in personas_str.split(",")]
+        personas = []
+        for n in names:
+            pname, pdata = lookup_persona(n)
+            if pname:
+                personas.append(pname)
+            else:
+                return {"error": f"unknown persona: {n}"}
+    elif topic and topic in TOPIC_TO_PERSONAS:
+        personas = list(TOPIC_TO_PERSONAS[topic])
+    else:
+        scores = {}
+        for category, keywords in TOPIC_KEYWORDS.items():
+            score = sum(1 for kw in keywords if kw in question_lower)
+            if score > 0:
+                scores[category] = score
+        detected_topic = max(scores, key=scores.get) if scores else "architecture"
+        personas = list(TOPIC_TO_PERSONAS.get(detected_topic, TOPIC_TO_PERSONAS["architecture"]))
+
+    if len(personas) > seats:
+        personas = personas[:seats]
+    while len(personas) < seats:
+        available = [p for p in SPECIALIST_PERSONAS if p not in personas]
+        if available:
+            personas.append(random.choice(available))
+        else:
+            break
+
+    if fun:
+        fun_persona = random.choice(list(FUN_PERSONAS.keys()))
+        replaceable = [i for i, p in enumerate(personas) if p != "The Contrarian"]
+        if replaceable:
+            idx = random.choice(replaceable)
+            personas[idx] = fun_persona
+
+    agents = AGENT_ORDER[:seats]
+    assignment = {}
+    for i, agent in enumerate(agents):
+        pname = personas[i] if i < len(personas) else personas[-1]
+        assignment[agent] = {
+            "persona": pname,
+            "description": ALL_PERSONAS.get(pname, {}).get("description", ""),
+        }
+
+    return {
+        "assignment": assignment,
+        "personas": personas,
+        "agents": agents,
+        "fun_applied": fun,
+    }
+
+
+def _prompt_logic(persona_name, question, prior_context=None, context=None):
+    """Build an agent prompt for a new session. Returns dict with 'prompt' and 'persona'."""
+    pname, pdata = lookup_persona(persona_name)
+    if not pname:
+        return {"error": f"unknown persona: {persona_name}"}
+
+    desc = pdata["description"]
+
+    prior_block = ""
+    if prior_context:
+        prior_block = f"\n{prior_context}\n"
+
+    context_block = ""
+    if context:
+        context_block = f"\nCONTEXT:\n{context}\n"
+
+    prompt = f"""You are one member of a council of AI advisors being consulted on a question.
+
+YOUR ROLE: You are playing **{pname}** — {desc}
+Stay in character. Let this perspective shape your analysis, priorities, and recommendations.
+Be specific and opinionated — don't hedge. If you disagree with conventional wisdom, say so.
+{prior_block}{context_block}
+QUESTION:
+{question}
+
+Respond concisely (under 500 words). Focus on your strongest recommendation and key reasoning, filtered through your assigned role.
+
+For each key claim, tag it with one of:
+- [ANCHORED] — based on specific data, evidence, or established fact
+- [INFERRED] — logical deduction from known information
+- [SPECULATIVE] — opinion, gut feel, or hypothesis without direct evidence
+
+End your response with a single sentence starting with "RECOMMENDATION: I recommend..." that captures your core advice."""
+
+    return {"prompt": prompt.strip(), "persona": pname}
+
+
+def _session_create_logic(question, topic=None, personas_json_str=None, labels_json_str=None, prior_context=None):
+    """Create a new session. Returns dict with 'id', 'file', 'session'."""
+    ensure_dirs()
+    now = datetime.now()
+    topic_val = topic or question[:50]
+    slug = slugify(topic_val)
+    session_id = now.strftime(f"%Y-%m-%d-%H-%M-{slug}")
+    filename = f"{session_id}.json"
+
+    try:
+        personas = json.loads(personas_json_str) if personas_json_str else {}
+    except json.JSONDecodeError:
+        return {"error": "invalid JSON for personas"}
+
+    try:
+        labels = json.loads(labels_json_str) if labels_json_str else {}
+    except json.JSONDecodeError:
+        return {"error": "invalid JSON for labels"}
+
+    session = {
+        "id": session_id,
+        "topic": topic_val,
+        "question": question,
+        "date": now.strftime("%Y-%m-%d"),
+        "personas": personas,
+        "labels": labels,
+        "prior_context": prior_context,
+        "rounds": [],
+        "archived": False,
+    }
+
+    filepath = SESSIONS_DIR / filename
+    filepath.write_text(json.dumps(session, indent=2))
+    return {"id": session_id, "file": str(filepath), "session": session}
+
+
+def _similarity_logic(responses):
+    """Check Jaccard similarity between responses. Returns dict with 'pairs', 'average_similarity', 'high_consensus'."""
+    # Normalize legacy keys if present
+    for old, new in LEGACY_KEY_MAP.items():
+        if old in responses and new not in responses:
+            responses[new] = responses.pop(old)
+
+    keyword_sets = {}
+    for agent, text in responses.items():
+        keyword_sets[agent] = extract_keywords(str(text))
+
+    pairs = []
+    agents = list(keyword_sets.keys())
+    for i in range(len(agents)):
+        for j in range(i + 1, len(agents)):
+            a, b = agents[i], agents[j]
+            sa, sb = keyword_sets[a], keyword_sets[b]
+            if sa or sb:
+                union = sa | sb
+                intersection = sa & sb
+                jaccard = len(intersection) / len(union) if union else 0
+            else:
+                jaccard = 0
+            pairs.append({
+                "agents": [a, b],
+                "jaccard": round(jaccard, 3),
+                "shared_keywords": sorted(sa & sb) if sa and sb else [],
+            })
+
+    scores = [p["jaccard"] for p in pairs]
+    avg_similarity = round(sum(scores) / len(scores), 3) if scores else 0
+    high_consensus = avg_similarity > 0.6
+
+    return {
+        "pairs": pairs,
+        "average_similarity": avg_similarity,
+        "high_consensus": high_consensus,
+    }
+
+
+def _synthesis_prompt_logic(responses, question, personas_json_str=None, labels_json_str=None,
+                            prior_context=None, agent_status=None, mode=None, compact=False):
+    """Build a synthesis prompt from agent responses. Returns dict with 'prompt'."""
+    # Normalize legacy keys
+    for old, new in LEGACY_KEY_MAP.items():
+        if old in responses and new not in responses:
+            responses[new] = responses.pop(old)
+
+    try:
+        personas_map = json.loads(personas_json_str) if isinstance(personas_json_str, str) and personas_json_str else {}
+    except json.JSONDecodeError:
+        personas_map = {}
+
+    try:
+        labels_map = json.loads(labels_json_str) if isinstance(labels_json_str, str) and labels_json_str else {}
+    except json.JSONDecodeError:
+        labels_map = {}
+
+    label_values = [labels_map.get(a, "") for a in AGENT_ORDER if a in responses]
+    all_same_label = len(set(label_values)) <= 1 and all(label_values)
+
+    responses_block = ""
+    advisor_headers = []
+    for agent in AGENT_ORDER:
+        if agent in responses:
+            resp = responses[agent]
+            if isinstance(resp, dict):
+                persona = resp.get("persona", personas_map.get(agent, "Unknown"))
+                text = resp.get("response", "")
+            else:
+                persona = personas_map.get(agent, "Unknown")
+                text = str(resp)
+            label = labels_map.get(agent, agent)
+            if all_same_label:
+                header = f"**{persona}**"
+            else:
+                header = f"**{label} as {persona}**"
+            advisor_headers.append((header, persona, label))
+            responses_block += f"\n{header}:\n{text}\n"
+
+    prior_line = ""
+    if prior_context:
+        prior_line = f"\nPrior context: {prior_context}\n"
+
+    if all_same_label:
+        personas_line = ", ".join(h[1] for h in advisor_headers)
+        advisor_lines = "\n\n".join(
+            f"{h[0]}: [2-3 sentence summary of their position + their RECOMMENDATION]"
+            for h in advisor_headers
+        )
+        matrix_headers = " | ".join(h[1] for h in advisor_headers)
+    else:
+        personas_line = ", ".join(f"{h[2]} as {h[1]}" for h in advisor_headers)
+        advisor_lines = "\n\n".join(
+            f"{h[0]}: [2-3 sentence summary of their position + their RECOMMENDATION]"
+            for h in advisor_headers
+        )
+        matrix_headers = " | ".join(f"{h[2]} ({h[1]})" for h in advisor_headers)
+
+    matrix_positions = " | ".join("[2-5 word position]" for _ in advisor_headers)
+
+    status_line = ""
+    if agent_status:
+        try:
+            agent_status_obj = json.loads(agent_status) if isinstance(agent_status, str) else agent_status
+            status_parts = []
+            for cli in ["codex", "gemini", "claude"]:
+                if cli in agent_status_obj.get("agents", {}):
+                    info = agent_status_obj["agents"][cli]
+                    status_parts.append(f"{info['label'].split(' ')[0]} {'OK' if info['available'] else 'Missing'}")
+            cli_helper = "Active" if agent_status_obj.get("cli_helper_active", True) else "Inactive"
+            mode_val = mode or "parallel"
+            status_line = f"\n*Agents: {', '.join(status_parts)} | CLI Helper: {cli_helper} | Mode: {mode_val}*"
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    tip = random.choice(TIPS)
+
+    full_format = f"""Produce a briefing in this EXACT format:
+
+---
+
+**Council Briefing: [Topic]**
+*Personas: {personas_line}*{status_line}
+
+{advisor_lines}
+
+**Evidence Audit:** [If any consensus point rests primarily on [SPECULATIVE] claims from multiple advisors, flag it. If all key claims are anchored or inferred, write "All key claims grounded." 1-2 sentences.]
+
+**What To Do Next:**
+- [ ] [Concrete action item starting with a verb — the single most important next step]
+- [ ] [Second action item — verb-first, specific and actionable]
+- [ ] [Third action item (optional) — only if genuinely distinct from the first two]
+
+**Disagreement Matrix:**
+
+| Topic | {matrix_headers} |
+|-------|{"|".join("---" for _ in advisor_headers)}|
+| [Key issue 1] | {matrix_positions} |
+| [Key issue 2] | {matrix_positions} |
+
+Note which disagreements stem from persona framing vs genuine analytical divergence.
+
+**Consensus:** [What the council agrees on. 2-4 sentences maximum.]
+
+**Key Tension:** [The single most important unresolved trade-off. Frame it as a clear choice, not a hedge.]
+
+---
+
+> **Tip:** {tip}"""
+
+    compact_block = ""
+    if compact:
+        compact_block = f"""
+
+After the full briefing above, output the exact delimiter line:
+
+===COMPACT===
+
+Then output a compact version of the briefing in this EXACT format:
+
+**Council Briefing: [Topic]**
+*Personas: {personas_line} | Mode: {mode or "parallel"}*
+
+[3-5 sentence synthesis: the core recommendation, where advisors agree, and the key tension as one sentence. Do NOT list individual advisor positions — synthesize into a unified narrative.]
+
+**Do Next:**
+- [ ] [Most important action item — verb-first]
+- [ ] [Second action item — verb-first]
+
+> Say "show full brief" or use `--full` for per-advisor positions, disagreement matrix, and evidence audit."""
+
+    prompt = f"""You are the neutral mediator for a council of AI advisors. Synthesize their responses.
+
+QUESTION: {question}
+{prior_line}
+AGENT RESPONSES:
+{responses_block}
+
+{full_format}{compact_block}"""
+
+    return {"prompt": prompt.strip()}
+
+
+def _session_append_logic(session_id, round_data):
+    """Append round data to a session. Returns dict with 'id', 'round', 'session'."""
+    data, filepath = load_session(session_id)
+    if not data:
+        return {"error": f"session not found: {session_id}"}
+
+    round_data["round"] = len(data.get("rounds", [])) + 1
+    data.setdefault("rounds", []).append(round_data)
+    filepath.write_text(json.dumps(data, indent=2))
+    return {"id": session_id, "round": round_data["round"], "session": data}
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: parse
 # ---------------------------------------------------------------------------
 
@@ -500,68 +880,11 @@ def cmd_topic(args):
 
 def cmd_assign(args):
     """Assign personas to agents for a session."""
-    question = args.question.lower()
     seats = getattr(args, "seats", 3) or 3
-
-    # Determine personas
-    if args.personas:
-        names = [n.strip() for n in args.personas.split(",")]
-        personas = []
-        for n in names:
-            pname, pdata = lookup_persona(n)
-            if pname:
-                personas.append(pname)
-            else:
-                err(f"unknown persona: {n}")
-    elif args.topic and args.topic in TOPIC_TO_PERSONAS:
-        # LLM-provided topic classification — use directly
-        topic = args.topic
-        personas = list(TOPIC_TO_PERSONAS[topic])
-    else:
-        # Fallback: keyword-based auto-assign
-        scores = {}
-        for category, keywords in TOPIC_KEYWORDS.items():
-            score = sum(1 for kw in keywords if kw in question)
-            if score > 0:
-                scores[category] = score
-        topic = max(scores, key=scores.get) if scores else "architecture"
-        personas = list(TOPIC_TO_PERSONAS.get(topic, TOPIC_TO_PERSONAS["architecture"]))
-
-    # Trim or pad to seat count
-    if len(personas) > seats:
-        personas = personas[:seats]
-    while len(personas) < seats:
-        # Add from specialists that aren't already assigned
-        available = [p for p in SPECIALIST_PERSONAS if p not in personas]
-        if available:
-            personas.append(random.choice(available))
-        else:
-            break
-
-    # Apply --fun: replace one random non-Contrarian seat with a fun persona
-    if args.fun:
-        fun_persona = random.choice(list(FUN_PERSONAS.keys()))
-        replaceable = [i for i, p in enumerate(personas) if p != "The Contrarian"]
-        if replaceable:
-            idx = random.choice(replaceable)
-            personas[idx] = fun_persona
-
-    # Map to agents
-    agents = AGENT_ORDER[:seats]
-    assignment = {}
-    for i, agent in enumerate(agents):
-        pname = personas[i] if i < len(personas) else personas[-1]
-        assignment[agent] = {
-            "persona": pname,
-            "description": ALL_PERSONAS.get(pname, {}).get("description", ""),
-        }
-
-    emit({
-        "assignment": assignment,
-        "personas": personas,
-        "agents": agents,
-        "fun_applied": args.fun,
-    })
+    result = _assign_logic(args.question, topic=args.topic, personas_str=args.personas, fun=args.fun, seats=seats)
+    if "error" in result:
+        err(result["error"])
+    emit(result)
 
 
 # ---------------------------------------------------------------------------
@@ -570,17 +893,15 @@ def cmd_assign(args):
 
 def cmd_prompt(args):
     """Build an agent prompt."""
-    pname, pdata = lookup_persona(args.persona)
-    if not pname:
-        err(f"unknown persona: {args.persona}")
-
-    desc = pdata["description"]
-
     if args.followup:
-        # Follow-up round prompt
+        # Follow-up round prompt — not handled by _prompt_logic
+        pname, pdata = lookup_persona(args.persona)
+        if not pname:
+            err(f"unknown persona: {args.persona}")
         if not args.previous_position:
             err("--previous-position required for follow-up prompts")
 
+        desc = pdata["description"]
         other_positions = args.other_positions or "No other positions provided."
         mediator_synthesis = args.mediator_synthesis or ""
         user_followup = args.user_followup or ""
@@ -606,35 +927,14 @@ Respond to the user's follow-up. You may revise your position if the user raises
 Tag key claims as [ANCHORED], [INFERRED], or [SPECULATIVE].
 
 End with a single sentence starting with "RECOMMENDATION: I recommend..." that captures your updated core advice."""
+
+        emit({"prompt": prompt.strip(), "persona": pname})
     else:
         # New session prompt
-        prior_block = ""
-        if args.prior_context:
-            prior_block = f"\n{args.prior_context}\n"
-
-        context_block = ""
-        if args.context:
-            context_block = f"\nCONTEXT:\n{args.context}\n"
-
-        prompt = f"""You are one member of a council of AI advisors being consulted on a question.
-
-YOUR ROLE: You are playing **{pname}** — {desc}
-Stay in character. Let this perspective shape your analysis, priorities, and recommendations.
-Be specific and opinionated — don't hedge. If you disagree with conventional wisdom, say so.
-{prior_block}{context_block}
-QUESTION:
-{args.question}
-
-Respond concisely (under 500 words). Focus on your strongest recommendation and key reasoning, filtered through your assigned role.
-
-For each key claim, tag it with one of:
-- [ANCHORED] — based on specific data, evidence, or established fact
-- [INFERRED] — logical deduction from known information
-- [SPECULATIVE] — opinion, gut feel, or hypothesis without direct evidence
-
-End your response with a single sentence starting with "RECOMMENDATION: I recommend..." that captures your core advice."""
-
-    emit({"prompt": prompt.strip(), "persona": pname})
+        result = _prompt_logic(args.persona, args.question, prior_context=args.prior_context, context=args.context)
+        if "error" in result:
+            err(result["error"])
+        emit(result)
 
 
 # ---------------------------------------------------------------------------
@@ -648,151 +948,16 @@ def cmd_synthesis_prompt(args):
     else:
         err("--stdin required: pipe agent responses as JSON")
 
-    # Normalize legacy keys if present
-    for old, new in LEGACY_KEY_MAP.items():
-        if old in data and new not in data:
-            data[new] = data.pop(old)
-
-    question = args.question
-    personas_info = args.personas_json or "{}"
-    try:
-        personas_map = json.loads(personas_info) if isinstance(personas_info, str) else personas_info
-    except json.JSONDecodeError:
-        personas_map = {}
-
-    labels_info = args.labels_json or "{}"
-    try:
-        labels_map = json.loads(labels_info) if isinstance(labels_info, str) else labels_info
-    except json.JSONDecodeError:
-        labels_map = {}
-
-    # Determine if all labels are the same (persona-only mode)
-    label_values = [labels_map.get(a, "") for a in AGENT_ORDER if a in data]
-    all_same_label = len(set(label_values)) <= 1 and all(label_values)
-
-    responses_block = ""
-    advisor_headers = []
-    for agent in AGENT_ORDER:
-        if agent in data:
-            resp = data[agent]
-            if isinstance(resp, dict):
-                persona = resp.get("persona", personas_map.get(agent, "Unknown"))
-                text = resp.get("response", "")
-            else:
-                persona = personas_map.get(agent, "Unknown")
-                text = str(resp)
-            label = labels_map.get(agent, agent)
-            if all_same_label:
-                header = f"**{persona}**"
-            else:
-                header = f"**{label} as {persona}**"
-            advisor_headers.append((header, persona, label))
-            responses_block += f"\n{header}:\n{text}\n"
-
-    prior_line = ""
-    if args.prior_context:
-        prior_line = f"\nPrior context: {args.prior_context}\n"
-
-    # Build format example based on labeling mode
-    if all_same_label:
-        personas_line = ", ".join(h[1] for h in advisor_headers)
-        advisor_lines = "\n\n".join(
-            f"{h[0]}: [2-3 sentence summary of their position + their RECOMMENDATION]"
-            for h in advisor_headers
-        )
-        matrix_headers = " | ".join(h[1] for h in advisor_headers)
-    else:
-        personas_line = ", ".join(f"{h[2]} as {h[1]}" for h in advisor_headers)
-        advisor_lines = "\n\n".join(
-            f"{h[0]}: [2-3 sentence summary of their position + their RECOMMENDATION]"
-            for h in advisor_headers
-        )
-        matrix_headers = " | ".join(f"{h[2]} ({h[1]})" for h in advisor_headers)
-
-    matrix_positions = " | ".join("[2-5 word position]" for _ in advisor_headers)
-
-    # Build agent status line if provided
-    status_line = ""
-    if args.agent_status:
-        try:
-            agent_status = json.loads(args.agent_status) if isinstance(args.agent_status, str) else args.agent_status
-            status_parts = []
-            for cli in ["codex", "gemini", "claude"]:
-                if cli in agent_status.get("agents", {}):
-                    info = agent_status["agents"][cli]
-                    status_parts.append(f"{info['label'].split(' ')[0]} {'OK' if info['available'] else 'Missing'}")
-            cli_helper = "Active" if agent_status.get("cli_helper_active", True) else "Inactive"
-            mode = args.mode or "parallel"
-            status_line = f"\n*Agents: {', '.join(status_parts)} | CLI Helper: {cli_helper} | Mode: {mode}*"
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-    tip = random.choice(TIPS)
-
-    full_format = f"""Produce a briefing in this EXACT format:
-
----
-
-**Council Briefing: [Topic]**
-*Personas: {personas_line}*{status_line}
-
-{advisor_lines}
-
-**Evidence Audit:** [If any consensus point rests primarily on [SPECULATIVE] claims from multiple advisors, flag it. If all key claims are anchored or inferred, write "All key claims grounded." 1-2 sentences.]
-
-**What To Do Next:**
-- [ ] [Concrete action item starting with a verb — the single most important next step]
-- [ ] [Second action item — verb-first, specific and actionable]
-- [ ] [Third action item (optional) — only if genuinely distinct from the first two]
-
-**Disagreement Matrix:**
-
-| Topic | {matrix_headers} |
-|-------|{"|".join("---" for _ in advisor_headers)}|
-| [Key issue 1] | {matrix_positions} |
-| [Key issue 2] | {matrix_positions} |
-
-Note which disagreements stem from persona framing vs genuine analytical divergence.
-
-**Consensus:** [What the council agrees on. 2-4 sentences maximum.]
-
-**Key Tension:** [The single most important unresolved trade-off. Frame it as a clear choice, not a hedge.]
-
----
-
-> **Tip:** {tip}"""
-
-    compact_block = ""
-    if args.compact:
-        compact_block = f"""
-
-After the full briefing above, output the exact delimiter line:
-
-===COMPACT===
-
-Then output a compact version of the briefing in this EXACT format:
-
-**Council Briefing: [Topic]**
-*Personas: {personas_line} | Mode: {args.mode or "parallel"}*
-
-[3-5 sentence synthesis: the core recommendation, where advisors agree, and the key tension as one sentence. Do NOT list individual advisor positions — synthesize into a unified narrative.]
-
-**Do Next:**
-- [ ] [Most important action item — verb-first]
-- [ ] [Second action item — verb-first]
-
-> Say "show full brief" or use `--full` for per-advisor positions, disagreement matrix, and evidence audit."""
-
-    prompt = f"""You are the neutral mediator for a council of AI advisors. Synthesize their responses.
-
-QUESTION: {question}
-{prior_line}
-AGENT RESPONSES:
-{responses_block}
-
-{full_format}{compact_block}"""
-
-    emit({"prompt": prompt.strip()})
+    result = _synthesis_prompt_logic(
+        data, args.question,
+        personas_json_str=args.personas_json,
+        labels_json_str=args.labels_json,
+        prior_context=args.prior_context,
+        agent_status=args.agent_status,
+        mode=args.mode,
+        compact=args.compact,
+    )
+    emit(result)
 
 
 # ---------------------------------------------------------------------------
@@ -907,56 +1072,7 @@ def cmd_session(args):
 
 def cmd_historian(args):
     """Find past sessions related to a question, weighted by rating and outcome."""
-    question_keywords = extract_keywords(args.question)
-    if not question_keywords:
-        emit({"related": [], "message": "no keywords extracted from question"})
-        return
-
-    sessions = list_sessions()
-    scored = []
-    for s in sessions:
-        session_text = f"{s['topic']} {s['question']}"
-        session_keywords = extract_keywords(session_text)
-        if not session_keywords:
-            continue
-        overlap = question_keywords & session_keywords
-        if overlap:
-            base_score = len(overlap) / len(question_keywords | session_keywords)
-
-            # Weight by rating (unrated defaults to 3/5)
-            rating = s.get("rating") or 3
-            rating_weight = rating / 3.0  # 1/5 = 0.33x, 3/5 = 1.0x, 5/5 = 1.67x
-
-            # Weight by outcome
-            outcome = s.get("outcome")
-            outcome_weight = 1.0
-            if outcome and isinstance(outcome, dict):
-                status = outcome.get("status", "")
-                if status == "followed":
-                    outcome_weight = 1.2
-                elif status == "wrong":
-                    outcome_weight = 0.5
-                elif status == "partial":
-                    outcome_weight = 0.9
-                elif status == "ignored":
-                    outcome_weight = 0.8
-
-            weighted_score = base_score * rating_weight * outcome_weight
-
-            scored.append({
-                **s,
-                "relevance_score": round(weighted_score, 3),
-                "base_score": round(base_score, 3),
-                "rating_weight": round(rating_weight, 2),
-                "outcome_weight": outcome_weight,
-                "matching_keywords": sorted(overlap),
-            })
-
-    scored.sort(key=lambda x: x["relevance_score"], reverse=True)
-    # Return top 3 matches with score > 0.05
-    related = [s for s in scored if s["relevance_score"] > 0.05][:3]
-
-    emit({"related": related, "query_keywords": sorted(question_keywords)})
+    emit(_historian_logic(args.question))
 
 
 # ---------------------------------------------------------------------------
@@ -970,44 +1086,7 @@ def cmd_similarity(args):
     else:
         err("--stdin required: pipe responses as JSON object")
 
-    # Normalize legacy keys if present
-    for old, new in LEGACY_KEY_MAP.items():
-        if old in data and new not in data:
-            data[new] = data.pop(old)
-
-    # data: {"advisor_1": "response text", "advisor_2": "response text", ...}
-    keyword_sets = {}
-    for agent, text in data.items():
-        keyword_sets[agent] = extract_keywords(str(text))
-
-    pairs = []
-    agents = list(keyword_sets.keys())
-    for i in range(len(agents)):
-        for j in range(i + 1, len(agents)):
-            a, b = agents[i], agents[j]
-            sa, sb = keyword_sets[a], keyword_sets[b]
-            if sa or sb:
-                union = sa | sb
-                intersection = sa & sb
-                jaccard = len(intersection) / len(union) if union else 0
-            else:
-                jaccard = 0
-            pairs.append({
-                "agents": [a, b],
-                "jaccard": round(jaccard, 3),
-                "shared_keywords": sorted(sa & sb) if sa and sb else [],
-            })
-
-    # Overall consensus indicator
-    scores = [p["jaccard"] for p in pairs]
-    avg_similarity = round(sum(scores) / len(scores), 3) if scores else 0
-    high_consensus = avg_similarity > 0.6
-
-    emit({
-        "pairs": pairs,
-        "average_similarity": avg_similarity,
-        "high_consensus": high_consensus,
-    })
+    emit(_similarity_logic(data))
 
 
 # ---------------------------------------------------------------------------
@@ -1167,6 +1246,133 @@ def cmd_tip(args):
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: pipeline (pre-dispatch: historian + assign + prompts + session create)
+# ---------------------------------------------------------------------------
+
+def cmd_pipeline(args):
+    """Single call replacing historian + assign + prompt (x3) + session create + mkdir."""
+    ensure_dirs()
+
+    question = args.question
+    topic = args.topic
+    personas_str = args.personas
+    fun = args.fun
+    seats = args.seats or 3
+    prior_context = args.prior_context
+    context = args.context
+    labels_json_str = args.labels_json
+
+    # 1. Historian lookup
+    historian_result = _historian_logic(question)
+
+    # Build prior context block from historian results
+    historian_context = prior_context or ""
+    for related in historian_result.get("related", []):
+        date = related.get("date", "unknown")
+        rtopic = related.get("topic", "unknown")
+        rquestion = related.get("question", "")
+        outcome = related.get("outcome")
+        outcome_line = ""
+        if outcome and isinstance(outcome, dict):
+            outcome_line = f" Result: {outcome.get('status', 'unknown')} — {outcome.get('note', '')}"
+        block = f"PRIOR COUNCIL CONTEXT:\nOn {date}, the council discussed \"{rtopic}\": \"{rquestion}\".{outcome_line}"
+        if historian_context:
+            historian_context += "\n\n" + block
+        else:
+            historian_context = block
+
+    # 2. Assign personas
+    assign_result = _assign_logic(question, topic=topic, personas_str=personas_str, fun=fun, seats=seats)
+    if "error" in assign_result:
+        err(assign_result["error"])
+
+    assignment = assign_result["assignment"]
+    personas_list = assign_result["personas"]
+
+    # 3. Build prompts for each advisor
+    prompts = {}
+    for agent, info in assignment.items():
+        prompt_result = _prompt_logic(
+            info["persona"], question,
+            prior_context=historian_context if historian_context else None,
+            context=context,
+        )
+        if "error" in prompt_result:
+            err(prompt_result["error"])
+        prompts[agent] = prompt_result["prompt"]
+
+    # 4. Create session
+    personas_json_map = {agent: info["persona"] for agent, info in assignment.items()}
+    session_result = _session_create_logic(
+        question,
+        topic=topic,
+        personas_json_str=json.dumps(personas_json_map),
+        labels_json_str=labels_json_str,
+        prior_context=historian_context if historian_context else None,
+    )
+    if "error" in session_result:
+        err(session_result["error"])
+
+    emit({
+        "session_id": session_result["id"],
+        "session_file": session_result["file"],
+        "historian": historian_result,
+        "assignment": assignment,
+        "prompts": prompts,
+        "personas": personas_list,
+        "fun_applied": assign_result["fun_applied"],
+    })
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: finalize (post-dispatch: similarity + synthesis-prompt + session append)
+# ---------------------------------------------------------------------------
+
+def cmd_finalize(args):
+    """Single call replacing similarity + synthesis-prompt + session append."""
+    if not args.stdin:
+        err("--stdin required: pipe agent responses as JSON")
+
+    data = read_stdin_json()
+
+    # Normalize: accept both plain text and {persona, response} objects
+    responses = {}
+    for key, val in data.items():
+        if isinstance(val, dict) and "response" in val:
+            responses[key] = val["response"]
+        else:
+            responses[key] = str(val)
+
+    # 1. Similarity check
+    similarity_result = _similarity_logic(dict(responses))
+
+    # 2. Build synthesis prompt
+    synth_result = _synthesis_prompt_logic(
+        dict(data),  # pass original data (may have persona info)
+        args.question,
+        personas_json_str=args.personas_json,
+        labels_json_str=args.labels_json,
+        prior_context=args.prior_context,
+        agent_status=args.agent_status,
+        mode=args.mode,
+        compact=args.compact,
+    )
+
+    # 3. Session append — save raw responses
+    round_data = dict(data)  # raw advisor responses
+    append_result = _session_append_logic(args.session_id, round_data)
+    if "error" in append_result:
+        err(append_result["error"])
+
+    emit({
+        "synthesis_prompt": synth_result["prompt"],
+        "similarity": similarity_result,
+        "session_updated": True,
+        "round": append_result["round"],
+    })
+
+
+# ---------------------------------------------------------------------------
 # Main: argparse setup
 # ---------------------------------------------------------------------------
 
@@ -1248,6 +1454,29 @@ def main():
     # tip
     subparsers.add_parser("tip", help="Return a random tip")
 
+    # pipeline (pre-dispatch: historian + assign + prompts + session create)
+    p_pipeline = subparsers.add_parser("pipeline", help="Pre-dispatch: historian + assign + prompts + session create")
+    p_pipeline.add_argument("--question", required=True)
+    p_pipeline.add_argument("--topic", default=None)
+    p_pipeline.add_argument("--personas", default=None, help="Comma-separated persona overrides")
+    p_pipeline.add_argument("--fun", action="store_true")
+    p_pipeline.add_argument("--seats", type=int, default=3)
+    p_pipeline.add_argument("--prior-context", default=None)
+    p_pipeline.add_argument("--context", default=None, help="Codebase or background context for prompts")
+    p_pipeline.add_argument("--labels-json", default=None, help="JSON map of agent->label")
+
+    # finalize (post-dispatch: similarity + synthesis-prompt + session append)
+    p_final = subparsers.add_parser("finalize", help="Post-dispatch: similarity + synthesis-prompt + session append")
+    p_final.add_argument("--session-id", required=True)
+    p_final.add_argument("--question", required=True)
+    p_final.add_argument("--personas-json", required=True, help="JSON map of agent->persona")
+    p_final.add_argument("--labels-json", default=None, help="JSON map of agent->label")
+    p_final.add_argument("--agent-status", default=None, help="JSON agent status for briefing header")
+    p_final.add_argument("--mode", default=None, help="Dispatch mode for briefing header")
+    p_final.add_argument("--compact", action="store_true", help="Include compact format delimited by ===COMPACT===")
+    p_final.add_argument("--prior-context", default=None)
+    p_final.add_argument("--stdin", action="store_true")
+
     args = parser.parse_args()
 
     dispatch = {
@@ -1262,6 +1491,8 @@ def main():
         "agents": cmd_agents,
         "doctor": cmd_doctor,
         "tip": cmd_tip,
+        "pipeline": cmd_pipeline,
+        "finalize": cmd_finalize,
     }
 
     dispatch[args.command](args)

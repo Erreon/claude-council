@@ -538,6 +538,8 @@ All subcommands output JSON to stdout. Errors go to stderr.
 
 | Subcommand | Purpose | Example |
 |---|---|---|
+| `pipeline` | **Pre-dispatch combo:** historian + assign + prompts + session create | `council_cli.py pipeline --question "..." --topic "architecture"` |
+| `finalize` | **Post-dispatch combo:** similarity + synthesis-prompt + session append | `echo '{...}' \| council_cli.py finalize --session-id "..." --question "..." --personas-json '{...}' --stdin` |
 | `parse` | Parse `/council` command flags | `council_cli.py parse --raw "/council --fun Should we use Redis?"` |
 | `topic` | Classify question topic | `council_cli.py topic --question "Should we use Redis?"` |
 | `assign` | Assign personas to agents | `council_cli.py assign --question "..." [--fun] [--personas "X,Y,Z"]` |

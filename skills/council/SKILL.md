@@ -88,10 +88,19 @@ If `COUNCIL_CLI` is set, pass it to the subagent so it can use the CLI commands 
 
 > The main conversation never calls these directly. They are listed here as a reference for building the subagent prompt.
 
-- **Step 0 (Historian):** `python3 "$COUNCIL_CLI" historian --question "..."`
-- **Step 1 (Parse):** `python3 "$COUNCIL_CLI" parse --raw "/council ..."`
-- **Step 1 (Assign):** `python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]`
-- **Step 1 (Prompt):** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."]` (repeat per agent)
+**Primary path (preferred — fewest Bash calls):**
+
+- **Pipeline (pre-dispatch):** `python3 "$COUNCIL_CLI" pipeline --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun] [--prior-context "..."] [--context "..."] [--labels-json '{...}']`
+  Returns JSON with `session_id`, `historian`, `assignment`, `prompts` (one per advisor), `personas`, `fun_applied`. Replaces historian + assign + prompt (×3) + session create + mkdir.
+- **Finalize (post-dispatch):** `echo '{...}' | python3 "$COUNCIL_CLI" finalize --session-id "..." --question "..." --personas-json '{...}' [--labels-json '{...}'] [--agent-status '...'] [--mode "parallel"] [--compact] [--prior-context "..."] --stdin`
+  Takes advisor responses as stdin JSON, returns `synthesis_prompt`, `similarity`, `session_updated`, `round`. Replaces similarity + synthesis-prompt + session append.
+
+**Individual commands (still work — used for follow-ups and edge cases):**
+
+- **Historian:** `python3 "$COUNCIL_CLI" historian --question "..."`
+- **Parse:** `python3 "$COUNCIL_CLI" parse --raw "/council ..."`
+- **Assign:** `python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]`
+- **Prompt:** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."]` (repeat per agent)
 - **Follow-up prompts:** `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."`
 - **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" [--compact] --stdin`
 - **Session create:** `python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'`
@@ -234,24 +243,21 @@ Default is **parallel**. If you configure mixed providers (e.g., Codex + Gemini 
 
 > **ONE-BASH-CALL RULE:** Only ONE Bash call happens in the main conversation: the CLI detection block (above). Everything else — historian lookup, persona assignment, prompt building, agent dispatch — runs inside the Task subagent. The mediator does LLM reasoning only (topic classification, context gathering, flag parsing) then immediately launches the subagent.
 
-### 0. Historian Check (Mediator's Memory) — Delegated to Subagent
+### 0. Historian Check (Mediator's Memory) — Handled by Pipeline
 
-The mediator does **NOT** run the historian CLI command itself. Instead, the mediator passes the question and CLI path to the subagent (Step 2), which runs the historian lookup internally. This avoids a Bash permission prompt in the main conversation.
+The mediator does **NOT** run the historian CLI command itself. The `pipeline` command handles historian lookup automatically — it finds related past sessions, builds prior context blocks, and injects them into the agent prompts. No separate Bash call needed.
 
 The historian logic is unchanged — sessions with higher user ratings (from `/rate`) are weighted more heavily in relevance scoring. A 5-star session with keyword matches ranks above a 1-star session with the same matches. Unrated sessions default to 3/5.
 
-The subagent will:
-1. Run `python3 "$COUNCIL_CLI" historian --question "..."` (or read session files manually if no CLI)
-2. Scan topic names and questions for relevance to the current question, weighted by rating
-3. If a related session exists, include a **Prior Council Context** block in the agent prompts:
+The pipeline automatically builds a **Prior Council Context** block when related sessions exist:
 
 ```
 PRIOR COUNCIL CONTEXT:
-On [date], the council discussed "[topic]". Key outcome: [1-2 sentence summary of the synthesis/final position]. [Note any decisions made or positions that shifted.]
+On [date], the council discussed "[topic]": "[question]".
 [If outcome annotation exists: "Result: [status] — [note]"]
 ```
 
-If no related sessions exist, skip this block. Don't force connections where there aren't any. If a related session has an outcome annotation, always include it — this is the most valuable historical signal.
+If no related sessions exist, the pipeline skips this block. If a related session has an outcome annotation, it's always included — this is the most valuable historical signal.
 
 This gives the council institutional memory — agents can build on, challenge, or reference past discussions rather than starting from zero every time.
 
@@ -259,9 +265,9 @@ This gives the council institutional memory — agents can build on, challenge, 
 
 Take the user's question or topic and craft a clear, self-contained prompt. The prompt must include enough context that an agent with no prior conversation history can give a useful answer. If the question is about code, read relevant files and include their contents or summaries in the prompt.
 
-**No CLI calls here.** The mediator does LLM reasoning only in this step: topic classification, context gathering (via Read/Glob), and flag parsing. The `assign`, `prompt`, and `historian` CLI commands are called by the subagent in Step 2, not by the main conversation.
+**No CLI calls here.** The mediator does LLM reasoning only in this step: topic classification, context gathering (via Read/Glob), and flag parsing. The `pipeline` command (called by the subagent) handles historian lookup, persona assignment, prompt building, and session creation in a single call.
 
-**Classify the topic yourself** before assigning personas. You (the mediator LLM) understand intent far better than keyword matching. Pick the best-fit topic from this list and pass it to the subagent (which will call `assign --topic`):
+**Classify the topic yourself** before assigning personas. You (the mediator LLM) understand intent far better than keyword matching. Pick the best-fit topic from this list and pass it to the subagent (which will call `pipeline --topic`):
 
 | Topic key | Use when the question is about... |
 |-----------|----------------------------------|
@@ -304,26 +310,30 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
 
 **The subagent prompt must include the CRITICAL RULES preamble** (see next section) and instruct it to:
 
-0. Run `mkdir -p ~/.claude/council/sessions && mkdir -p ~/Documents/council` first to ensure save directories exist (silent no-op if they already exist)
+1. **Pipeline (1 Bash call):** Run `python3 "$COUNCIL_CLI" pipeline --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun] [--context "..."] [--labels-json '{...}']`
 
-1. **Historian lookup:** Run `python3 "$COUNCIL_CLI" historian --question "..."` (or scan session files manually if no CLI) and incorporate any prior context into the agent prompts
+   This single call handles: mkdir, historian lookup, persona assignment, prompt building (×3), and session creation. Parse the JSON output to get `session_id`, `prompts` (keyed by advisor), `assignment`, `historian`, and `personas`.
 
-2. **Persona assignment:** Run `python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]` (or assign manually using the topic-persona mapping if no CLI)
+   If no CLI is available, the subagent follows the prose instructions instead — run historian manually, assign personas using the topic-persona mapping, build prompts using the template below, and create the session file.
 
-3. **Prompt building:** Run `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." [--prior-context "..."]` per agent (or build prompts manually using the template below if no CLI)
-
-4. Run the three agents according to the **dispatch mode** (default: parallel), using the CLI commands from the **Agent Configuration** table at the top of this file. Replace `<PROMPT>` with the built prompt for each advisor.
+2. **Dispatch agents (3 Bash calls, parallel):** Run the three agents according to the **dispatch mode** (default: parallel), using the CLI commands from the **Agent Configuration** table at the top of this file. Replace `<PROMPT>` with the built prompt from the pipeline output (`prompts.advisor_1`, `prompts.advisor_2`, `prompts.advisor_3`).
 
    **Dispatch modes (NEVER use `run_in_background` in any mode):**
    - **parallel** (default): Launch all 3 Bash calls as **foreground** parallel calls in a single message (multiple Bash tool calls without `run_in_background`).
    - **staggered**: Launch Advisor 1 + Advisor 2 as foreground parallel calls in one message, wait for both to finish, then launch Advisor 3 alone as a foreground call
    - **sequential**: Launch Advisor 1, wait for it to finish, then Advisor 2, wait, then Advisor 3. All foreground calls.
 
-5. Synthesize the three responses. Generate BOTH the full briefing AND the compact version in a single synthesis call. When using the CLI, pass `--compact` to `synthesis-prompt` — this instructs the LLM to output both formats separated by `===COMPACT===`. Preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average).
+3. **Finalize (1 Bash call):** Collect the three agent responses into a JSON object (`{"advisor_1":"...","advisor_2":"...","advisor_3":"..."}`) and run:
 
-6. Save the JSON checkpoint to `~/.claude/council/sessions/`. Store the **full** briefing (everything before `===COMPACT===`) in the `synthesis` field — this is the archival copy.
+   `echo '<responses_json>' | python3 "$COUNCIL_CLI" finalize --session-id "<id>" --question "..." --personas-json '<personas>' [--labels-json '{...}'] [--agent-status '...'] [--mode "parallel"] [--compact] --stdin`
 
-7. Return the output to the mediator:
+   This single call handles: similarity check, synthesis prompt building, and saving raw responses to the session file. Parse the JSON output to get `synthesis_prompt`, `similarity`, `round`.
+
+   If no CLI is available, the subagent runs similarity check, builds the synthesis prompt, and saves the session file manually.
+
+4. **Synthesize:** Use the `synthesis_prompt` from finalize output as the LLM prompt to generate the briefing. Generate BOTH the full briefing AND the compact version in a single synthesis call (the prompt includes `--compact` instructions producing both formats separated by `===COMPACT===`). Preserve disagreements, surface tensions, and produce actionable next steps.
+
+5. **Save and return:** Save the **full** briefing (everything before `===COMPACT===`) to the session JSON checkpoint's `synthesis` field using the Write tool (no Bash call needed). Return the output to the mediator:
    - If `--full` was passed: return the **full** briefing
    - Otherwise (default): return the **compact** version (everything after `===COMPACT===`)
 
@@ -338,14 +348,16 @@ CRITICAL RULES — read before doing anything:
 3. If an agent times out (60s) or fails, note it in the briefing and proceed with the others. Do not retry or block.
 
 CLI COMMAND REFERENCE (use these, the main conversation does not):
-- Historian: python3 "$COUNCIL_CLI" historian --question "..."
-- Assign: python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]
-- Prompt: python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." [--prior-context "..."]
+
+PRIMARY PATH (preferred — fewest Bash calls):
+- Pipeline (pre-dispatch): python3 "$COUNCIL_CLI" pipeline --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun] [--prior-context "..."] [--context "..."] [--labels-json '{...}']
+  → Returns JSON: session_id, historian, assignment, prompts (one per advisor), personas, fun_applied
+- Finalize (post-dispatch): echo '{...}' | python3 "$COUNCIL_CLI" finalize --session-id "..." --question "..." --personas-json '{...}' [--labels-json '{...}'] [--agent-status '...'] [--mode "parallel"] [--compact] [--prior-context "..."] --stdin
+  → Returns JSON: synthesis_prompt, similarity, session_updated, round
+
+INDIVIDUAL COMMANDS (for follow-ups and edge cases):
 - Follow-up prompt: python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."
-- Synthesis prompt: echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" [--compact] --stdin
-- Session create: python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'
 - Session append: echo '{...}' | python3 "$COUNCIL_CLI" session append --id "..." --stdin
-- Similarity check: echo '{...}' | python3 "$COUNCIL_CLI" similarity --stdin
 - Tip: python3 "$COUNCIL_CLI" tip
 ```
 
@@ -540,7 +552,7 @@ Council sessions are automatically saved at each checkpoint (after each synthesi
 
 ### Auto-Save (Working Data)
 
-**Before writing any file**, always run `mkdir -p ~/.claude/council/sessions` and `mkdir -p ~/Documents/council` via Bash first. This ensures the directories exist without prompting. Do this silently every time — it's a no-op if they already exist.
+The `pipeline` command ensures directories exist automatically (`~/.claude/council/sessions` and `~/Documents/council`). For follow-up rounds without pipeline, run `mkdir -p ~/.claude/council/sessions && mkdir -p ~/Documents/council` first if needed.
 
 After every synthesis (initial briefing or follow-up round), save a JSON checkpoint to `~/.claude/council/sessions/`:
 
