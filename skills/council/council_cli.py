@@ -256,6 +256,7 @@ TIPS = [
     'Use --personas "Contrarian, Economist, Radical" to pick your own council',
     "The council remembers past sessions — related history is included automatically",
     "Run /council-help for a quick reference of all commands and features",
+    'Say "show full brief" or use --full to see the complete briefing with per-advisor positions and disagreement matrix',
 ]
 
 # Maps old provider-based keys to new advisor keys (for backward compat)
@@ -420,10 +421,16 @@ def cmd_parse(args):
 
     result = {
         "fun": False,
+        "full": False,
         "mode": "parallel",
         "personas": None,
         "question": "",
     }
+
+    # Extract --full
+    if re.search(r"--full\b", raw):
+        result["full"] = True
+        raw = re.sub(r"--full\s*", "", raw).strip()
 
     # Extract --fun
     if re.search(r"--fun\b", raw):
@@ -720,14 +727,9 @@ def cmd_synthesis_prompt(args):
         except (json.JSONDecodeError, KeyError):
             pass
 
-    prompt = f"""You are the neutral mediator for a council of AI advisors. Synthesize their responses.
+    tip = random.choice(TIPS)
 
-QUESTION: {question}
-{prior_line}
-AGENT RESPONSES:
-{responses_block}
-
-Produce a briefing in this EXACT format:
+    full_format = f"""Produce a briefing in this EXACT format:
 
 ---
 
@@ -758,7 +760,37 @@ Note which disagreements stem from persona framing vs genuine analytical diverge
 
 ---
 
-> **Tip:** {random.choice(TIPS)}"""
+> **Tip:** {tip}"""
+
+    compact_block = ""
+    if args.compact:
+        compact_block = f"""
+
+After the full briefing above, output the exact delimiter line:
+
+===COMPACT===
+
+Then output a compact version of the briefing in this EXACT format:
+
+**Council Briefing: [Topic]**
+*Personas: {personas_line} | Mode: {args.mode or "parallel"}*
+
+[3-5 sentence synthesis: the core recommendation, where advisors agree, and the key tension as one sentence. Do NOT list individual advisor positions — synthesize into a unified narrative.]
+
+**Do Next:**
+- [ ] [Most important action item — verb-first]
+- [ ] [Second action item — verb-first]
+
+> Say "show full brief" or use `--full` for per-advisor positions, disagreement matrix, and evidence audit."""
+
+    prompt = f"""You are the neutral mediator for a council of AI advisors. Synthesize their responses.
+
+QUESTION: {question}
+{prior_line}
+AGENT RESPONSES:
+{responses_block}
+
+{full_format}{compact_block}"""
 
     emit({"prompt": prompt.strip()})
 
@@ -1182,6 +1214,7 @@ def main():
     p_synth.add_argument("--prior-context", default=None)
     p_synth.add_argument("--agent-status", default=None, help="JSON agent status from 'agents' subcommand for briefing header")
     p_synth.add_argument("--mode", default=None, help="Dispatch mode (parallel/staggered/sequential) for briefing header")
+    p_synth.add_argument("--compact", action="store_true", help="Include compact format delimited by ===COMPACT===")
     p_synth.add_argument("--stdin", action="store_true")
 
     # session (with sub-actions)

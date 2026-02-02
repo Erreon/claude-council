@@ -93,7 +93,7 @@ If `COUNCIL_CLI` is set, pass it to the subagent so it can use the CLI commands 
 - **Step 1 (Assign):** `python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]`
 - **Step 1 (Prompt):** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."]` (repeat per agent)
 - **Follow-up prompts:** `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."`
-- **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" --stdin`
+- **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" [--compact] --stdin`
 - **Session create:** `python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'`
 - **Session append:** `echo '{...}' | python3 "$COUNCIL_CLI" session append --id "..." --stdin`
 - **Similarity check:** `echo '{...}' | python3 "$COUNCIL_CLI" similarity --stdin`
@@ -195,6 +195,21 @@ When manually specified, use exactly those personas. No substitution. Fun person
 
 Might produce: Advisor 1 as The Contrarian, Advisor 2 as The Time Traveler, Advisor 3 as The Pragmatist.
 
+### Output Mode
+
+By default, the council returns a **compact synthesis** — a 5-8 line summary with action items. The full briefing (per-advisor positions, disagreement matrix, evidence audit, key tension) is still generated and saved to the JSON checkpoint, but not shown unless requested.
+
+```
+/council --full [question]
+```
+
+| Flag | Behavior |
+|------|----------|
+| *(no flag)* | Returns compact synthesis. Full briefing saved to JSON checkpoint. |
+| `--full` | Returns the complete briefing with per-advisor positions, disagreement matrix, evidence audit, and key tension. |
+
+After receiving a compact synthesis, the user can say **"show full brief"** to retrieve the full version from the JSON checkpoint without re-running the council.
+
 ### Dispatch Mode
 
 Controls how agents are launched. Can be specified with `--mode`:
@@ -284,7 +299,7 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
 - The CLI commands for each agent (from the Agent Configuration table)
 - The synthesis format to follow
 - The JSON checkpoint save instructions
-- Flags: dispatch mode, `--fun`, `--personas`, etc.
+- Flags: dispatch mode, `--fun`, `--full`, `--personas`, etc.
 - Whether this is a new session or a follow-up round (include previous round context if follow-up)
 
 **The subagent prompt must include the CRITICAL RULES preamble** (see next section) and instruct it to:
@@ -304,11 +319,13 @@ Use the **Task tool** with `subagent_type: "general-purpose"` and a prompt that 
    - **staggered**: Launch Advisor 1 + Advisor 2 as foreground parallel calls in one message, wait for both to finish, then launch Advisor 3 alone as a foreground call
    - **sequential**: Launch Advisor 1, wait for it to finish, then Advisor 2, wait, then Advisor 3. All foreground calls.
 
-5. Synthesize the three responses — preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average)
+5. Synthesize the three responses. Generate BOTH the full briefing AND the compact version in a single synthesis call. When using the CLI, pass `--compact` to `synthesis-prompt` — this instructs the LLM to output both formats separated by `===COMPACT===`. Preserve disagreements, surface tensions, and produce actionable next steps (not a fourth opinion, not a bland average).
 
-6. Save the JSON checkpoint to `~/.claude/council/sessions/`
+6. Save the JSON checkpoint to `~/.claude/council/sessions/`. Store the **full** briefing (everything before `===COMPACT===`) in the `synthesis` field — this is the archival copy.
 
-7. Return ONLY the formatted briefing as its final output
+7. Return the output to the mediator:
+   - If `--full` was passed: return the **full** briefing
+   - Otherwise (default): return the **compact** version (everything after `===COMPACT===`)
 
 ### CRITICAL RULES Preamble (copy verbatim into every subagent prompt)
 
@@ -325,7 +342,7 @@ CLI COMMAND REFERENCE (use these, the main conversation does not):
 - Assign: python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]
 - Prompt: python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." [--prior-context "..."]
 - Follow-up prompt: python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."
-- Synthesis prompt: echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" --stdin
+- Synthesis prompt: echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" [--compact] --stdin
 - Session create: python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'
 - Session append: echo '{...}' | python3 "$COUNCIL_CLI" session append --id "..." --stdin
 - Similarity check: echo '{...}' | python3 "$COUNCIL_CLI" similarity --stdin
@@ -389,7 +406,11 @@ Tag key claims as [ANCHORED], [INFERRED], or [SPECULATIVE].
 End with a single sentence starting with "RECOMMENDATION: I recommend..." that captures your updated core advice.
 ```
 
-**Synthesis format (the subagent must use this exactly):**
+**Synthesis formats — the subagent produces BOTH, separated by `===COMPACT===`:**
+
+The subagent always generates both formats in a single LLM call. The full briefing is saved to the JSON checkpoint's `synthesis` field. The compact version is what gets returned to the mediator (and shown to the user) unless `--full` was passed.
+
+**Full format (saved to JSON checkpoint, shown with `--full`):**
 
 ---
 
@@ -434,6 +455,23 @@ Note which disagreements stem from persona framing vs genuine analytical diverge
 
 > **Tip:** [random tip from the list below]
 
+**Compact format (default output, shown without `--full`):**
+
+---
+
+**Council Briefing: [Topic]**
+*Personas: [list] | Mode: [mode]*
+
+[3-5 sentence synthesis: the core recommendation, where advisors agree, and the key tension as one sentence. Do NOT list individual advisor positions — synthesize into a unified narrative.]
+
+**Do Next:**
+- [ ] [Most important action item — verb-first]
+- [ ] [Second action item — verb-first]
+
+> Say "show full brief" or use `--full` for per-advisor positions, disagreement matrix, and evidence audit.
+
+---
+
 **Tip source:** If CLI is available, get the tip from `python3 "$COUNCIL_CLI" tip` (returns `{"tip": "..."}`). Otherwise pick one at random from this list:
 - Say "archive this" to save a Markdown copy to ~/Documents/council/
 - /rate 1-5 to rate this session — higher-rated advice surfaces more in future councils
@@ -445,12 +483,13 @@ Note which disagreements stem from persona framing vs genuine analytical diverge
 - Use --personas "Contrarian, Economist, Radical" to pick your own council
 - The council remembers past sessions — related history is included automatically
 - Run /council-help for a quick reference of all commands and features
+- Say "show full brief" or use --full to see the complete briefing with per-advisor positions and disagreement matrix
 
 Rotate tips — don't repeat the same tip in back-to-back sessions.
 
 ### 3. Present the Briefing
 
-Take the subagent's returned briefing and present it directly to the user. The main context only ever sees this final briefing — never the raw agent responses.
+Take the subagent's returned output and present it directly to the user. The subagent returns either the compact synthesis (default) or the full briefing (when `--full` is passed). The main context only ever sees this final output — never the raw agent responses.
 
 ### 4. Consensus Check
 
@@ -481,7 +520,17 @@ When the user's follow-up references a specific section of the briefing — a di
 
 The drill-down follow-up uses the same subagent dispatch and JSON checkpoint flow. The difference is in the prompt framing — targeted prompts produce more focused, useful responses than repeating the full question.
 
-### 6. Optional: Deep Dive
+### 6. Show Full Brief (On-Demand)
+
+When the user says "show full brief", "show the full briefing", "full brief", or uses `--full` after receiving a compact synthesis, this is **NOT** a follow-up round — do NOT re-dispatch agents. Instead:
+
+1. Read the JSON checkpoint for the current session from `~/.claude/council/sessions/`
+2. Extract the `synthesis` field from the latest round
+3. Present the full briefing text to the user
+
+This retrieves the already-generated full briefing from disk. No LLM calls needed.
+
+### 7. Optional: Deep Dive
 
 If the user wants to see a full raw agent response, read it from the JSON checkpoint file in `~/.claude/council/sessions/` using the Read tool. This pulls it from disk on-demand rather than keeping it in context.
 
