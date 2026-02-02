@@ -232,9 +232,10 @@ The first-run hook prints this permissions block when you start your first sessi
 The mediator will:
 1. Check past sessions for relevant history (weighted by rating and outcome)
 2. Auto-assign personas based on the topic
-3. Dispatch agents (staggered by default)
-4. Check for response similarity and warn if agents converge too much
-5. Synthesize a briefing with a disagreement matrix, evidence audit, and actionable next steps
+3. Verify current-state facts if the question depends on them (versions, pricing, what's open, etc.)
+4. Dispatch agents with verified facts included as grounding context
+5. Check for response similarity and warn if agents converge too much
+6. Synthesize a briefing — with post-synthesis fact check — including a disagreement matrix, evidence audit, and actionable next steps
 
 **Manual persona override:**
 ```
@@ -440,7 +441,9 @@ The running Claude Code instance acts as a neutral mediator with three responsib
 
 2. **Historian** — Before each session, checks past sessions for relevant context (weighted by user ratings and outcome annotations) and includes it in agent prompts. Sessions rated highly or with positive outcomes surface more; sessions marked `wrong` get demoted. This gives the council institutional memory that improves over time.
 
-3. **Quality monitor** — Checks agent responses for excessive similarity before synthesis. If two advisors converge too much (>60% overlap), the mediator flags it so the user can consider re-running with more diverse personas.
+3. **Fact-checker** — Before dispatch, assesses whether the question depends on current-state facts (versions, release dates, pricing, availability). If so, runs a quick web search and includes verified facts as grounding context in agent prompts. After synthesis, scans for ungrounded factual claims and labels corrections with `[Mediator correction: ...]` so the user can distinguish agent positions from mediator interventions.
+
+4. **Quality monitor** — Checks agent responses for excessive similarity before synthesis. If two advisors converge too much (>60% overlap), the mediator flags it so the user can consider re-running with more diverse personas.
 
 ## Context Efficiency
 
@@ -539,7 +542,7 @@ Getting perspectives is easy — getting *useful* perspectives takes a little te
 
 **Push back in follow-ups.** Most of the value is in rounds 2 and 3, not round 1. Round 1 is each agent performing their persona. When you reply with "I disagree because..." or "but what about the case where..." — that's when agents start revising positions and the real insight surfaces. Don't treat it as one-shot.
 
-**Feed context for factual questions.** The agents reason from training data, not live sources. If your question depends on current data (market conditions, new tools, recent research), gather sources first and include them in your question. The mediator passes your full text as context to all three agents, so they reason over evidence instead of vibes.
+**The mediator fact-checks when it matters.** Before dispatch, the mediator assesses whether your question depends on current-state facts — versions, release dates, pricing, what's open or available. If so, it does a quick web search and includes verified facts in the agent prompts as grounding context, so agents reason from evidence instead of potentially stale training data. After synthesis, it also scans for factual claims that slipped through and labels corrections with `[Mediator correction: ...]` so you know what came from agents vs. the mediator. For best results on factual questions, you can still include specific context yourself — the more grounding the mediator has, the better.
 
 **Pick your own personas when stakes are high.** Auto-assignment is fine for casual questions. For something you're genuinely agonizing over, think about which perspectives would actually help: `--personas "Economist, Risk Analyst, Radical"` for a pricing decision, `--personas "Outsider, User Advocate, Craftsperson"` when you're too deep in the weeds.
 
@@ -567,12 +570,12 @@ All subcommands output JSON to stdout. Errors go to stderr.
 
 | Subcommand | Purpose | Example |
 |---|---|---|
-| `pipeline` | **Pre-dispatch combo:** historian + assign + prompts + session create | `council_cli.py pipeline --question "..." --topic "architecture"` |
+| `pipeline` | **Pre-dispatch combo:** historian + assign + prompts + session create | `council_cli.py pipeline --question "..." --topic "architecture" [--grounding-facts "..."]` |
 | `finalize` | **Post-dispatch combo:** similarity + synthesis-prompt + session append | `echo '{...}' \| council_cli.py finalize --session-id "..." --question "..." --personas-json '{...}' --stdin` |
 | `parse` | Parse `/council` command flags | `council_cli.py parse --raw "/council --fun Should we use Redis?"` |
 | `topic` | Classify question topic | `council_cli.py topic --question "Should we use Redis?"` |
 | `assign` | Assign personas to agents | `council_cli.py assign --question "..." [--fun] [--personas "X,Y,Z"]` |
-| `prompt` | Build agent prompt | `council_cli.py prompt --persona "The Contrarian" --question "..."` |
+| `prompt` | Build agent prompt | `council_cli.py prompt --persona "The Contrarian" --question "..." [--grounding-facts "..."]` |
 | `synthesis-prompt` | Build synthesis prompt | `echo '{...}' \| council_cli.py synthesis-prompt --question "..." --stdin` |
 | `session create` | Create new session | `council_cli.py session create --question "..." --topic "..."` |
 | `session load` | Load session by ID | `council_cli.py session load --id "..."` |

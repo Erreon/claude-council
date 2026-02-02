@@ -244,6 +244,33 @@ Documented 6 known UX friction points in TODO.md: no progress feedback during di
 
 ---
 
+## Fact-Grounding Triage — v1.4.2
+
+During a council session about upgrading from .NET 9 to .NET 10, one agent incorrectly claimed .NET 10 wasn't LTS — a factual error that cascaded into a recommendation to skip the upgrade entirely. The mediator had WebSearch available but didn't use it before dispatch, so agents were left to reason from potentially stale training data.
+
+This is a prompt-level fix, not a new feature. No code changes, no new CLI commands — just explicit instructions telling the mediator to use tools it already has.
+
+### Pre-Dispatch Fact Grounding
+
+Added a triage step to Step 1 (Frame the Question) in `SKILL.md`. Before dispatch, the mediator now assesses whether the question depends on current-state facts — versions, release dates, pricing, what's open or available. If yes, it does a quick WebSearch and includes verified facts as a "Grounding Facts" block in the agent prompts. If the question is purely strategic or opinion-based, it skips the search.
+
+The triage table makes classification fast:
+
+| Search needed | Examples |
+|---------------|----------|
+| **Yes** | Version upgrades, release timelines, restaurant/hotel recommendations, pricing comparisons |
+| **No** | Architecture debates, career advice, parenting, evergreen best practices |
+
+### Agent Prompt Template Update
+
+Added a `GROUNDING FACTS` slot to both the new-session and follow-up prompt templates. When the mediator verifies facts, they're injected here with explicit instructions: "Treat these as authoritative and do not contradict them." This prevents agents from overriding verified facts with stale training data.
+
+### Post-Synthesis Fact Check
+
+Added a verification step to Step 3 (Present the Briefing). Before presenting, the mediator scans for factual claims that weren't grounded pre-dispatch. If an agent's recommendation hinges on a potentially wrong fact, the mediator verifies it and adds a labeled correction: `[Mediator correction: <what was claimed> is incorrect; <verified fact with source>]`. Corrections are always visible so the user knows when the mediator intervened vs. what the agent originally said.
+
+---
+
 ## What's Next
 
 Open areas for future work:

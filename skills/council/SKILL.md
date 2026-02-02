@@ -90,7 +90,7 @@ If `COUNCIL_CLI` is set, pass it to the subagent so it can use the CLI commands 
 
 **Primary path (preferred — fewest Bash calls):**
 
-- **Pipeline (pre-dispatch):** `python3 "$COUNCIL_CLI" pipeline --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun] [--prior-context "..."] [--context "..."] [--labels-json '{...}']`
+- **Pipeline (pre-dispatch):** `python3 "$COUNCIL_CLI" pipeline --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun] [--prior-context "..."] [--context "..."] [--grounding-facts "..."] [--labels-json '{...}']`
   Returns JSON with `session_id`, `historian`, `assignment`, `prompts` (one per advisor), `personas`, `fun_applied`. Replaces historian + assign + prompt (×3) + session create + mkdir.
 - **Finalize (post-dispatch):** `echo '{...}' | python3 "$COUNCIL_CLI" finalize --session-id "..." --question "..." --personas-json '{...}' [--labels-json '{...}'] [--agent-status '...'] [--mode "parallel"] [--compact] [--prior-context "..."] --stdin`
   Takes advisor responses as stdin JSON, returns `synthesis_prompt`, `similarity`, `session_updated`, `round`. Replaces similarity + synthesis-prompt + session append.
@@ -100,7 +100,7 @@ If `COUNCIL_CLI` is set, pass it to the subagent so it can use the CLI commands 
 - **Historian:** `python3 "$COUNCIL_CLI" historian --question "..."`
 - **Parse:** `python3 "$COUNCIL_CLI" parse --raw "/council ..."`
 - **Assign:** `python3 "$COUNCIL_CLI" assign --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun]`
-- **Prompt:** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."]` (repeat per agent)
+- **Prompt:** `python3 "$COUNCIL_CLI" prompt --persona "The Contrarian" --question "..." [--prior-context "..."] [--grounding-facts "..."]` (repeat per agent)
 - **Follow-up prompts:** `python3 "$COUNCIL_CLI" prompt --persona "..." --question "..." --followup --previous-position "..." --other-positions "..." --user-followup "..."`
 - **Synthesis prompt:** `echo '{...}' | python3 "$COUNCIL_CLI" synthesis-prompt --question "..." --personas-json '{...}' --agent-status "$AGENT_STATUS" --mode "parallel" [--compact] --stdin`
 - **Session create:** `python3 "$COUNCIL_CLI" session create --question "..." --topic "..." --personas-json '{...}'`
@@ -265,7 +265,19 @@ This gives the council institutional memory — agents can build on, challenge, 
 
 Take the user's question or topic and craft a clear, self-contained prompt. The prompt must include enough context that an agent with no prior conversation history can give a useful answer. If the question is about code, read relevant files and include their contents or summaries in the prompt.
 
-**No CLI calls here.** The mediator does LLM reasoning only in this step: topic classification, context gathering (via Read/Glob), and flag parsing. The `pipeline` command (called by the subagent) handles historian lookup, persona assignment, prompt building, and session creation in a single call.
+**Fact-grounding triage:** Before dispatch, assess whether the question's value depends on **current-state facts** — things that may have changed since agent training data cutoffs. If yes, do a quick WebSearch to ground the prompt with verified facts. If the question is purely strategic, opinion-based, or hypothetical, skip the search.
+
+| Search needed | Examples |
+|---------------|----------|
+| **Yes** — versions, release dates, timelines | ".NET 9 to 10 upgrade", "should we adopt React 22?", "Kubernetes 1.32 breaking changes" |
+| **Yes** — what exists/is available now | "Best restaurants in Austin", "top hotels in Tokyo", "which cloud has the cheapest GPUs right now" |
+| **Yes** — pricing, plans, policies | "Vercel vs Netlify pricing", "AWS free tier limits", "does Stripe support X" |
+| **No** — pure strategy/opinion | "Microservices vs monolith?", "should I leave my job?", "how to handle a difficult coworker" |
+| **No** — evergreen patterns | "Best practices for error handling", "how to structure a React app", "parenting a toddler" |
+
+When searching, include the verified facts as a **"Grounding Facts"** block in the agent prompts so all advisors reason from the same baseline. This prevents one agent's stale training data from cascading into a bad recommendation.
+
+**No CLI calls here (beyond the optional WebSearch).** The mediator does LLM reasoning only in this step: topic classification, context gathering (via Read/Glob/WebSearch), and flag parsing. The `pipeline` command (called by the subagent) handles historian lookup, persona assignment, prompt building, and session creation in a single call.
 
 **Classify the topic yourself** before assigning personas. You (the mediator LLM) understand intent far better than keyword matching. Pick the best-fit topic from this list and pass it to the subagent (which will call `pipeline --topic`):
 
@@ -350,7 +362,7 @@ CRITICAL RULES — read before doing anything:
 CLI COMMAND REFERENCE (use these, the main conversation does not):
 
 PRIMARY PATH (preferred — fewest Bash calls):
-- Pipeline (pre-dispatch): python3 "$COUNCIL_CLI" pipeline --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun] [--prior-context "..."] [--context "..."] [--labels-json '{...}']
+- Pipeline (pre-dispatch): python3 "$COUNCIL_CLI" pipeline --question "..." --topic "<topic>" [--personas "X,Y,Z"] [--fun] [--prior-context "..."] [--context "..."] [--grounding-facts "..."] [--labels-json '{...}']
   → Returns JSON: session_id, historian, assignment, prompts (one per advisor), personas, fun_applied
 - Finalize (post-dispatch): echo '{...}' | python3 "$COUNCIL_CLI" finalize --session-id "..." --question "..." --personas-json '{...}' [--labels-json '{...}'] [--agent-status '...'] [--mode "parallel"] [--compact] [--prior-context "..."] --stdin
   → Returns JSON: synthesis_prompt, similarity, session_updated, round
@@ -374,6 +386,12 @@ Be specific and opinionated — don't hedge. If you disagree with conventional w
 
 [PRIOR COUNCIL CONTEXT (if any):
 On [date], the council discussed "[topic]". Key outcome: [summary]. ]
+
+[GROUNDING FACTS (if any):
+The following facts have been verified by the mediator. Treat these as authoritative and do not contradict them:
+- [verified fact 1]
+- [verified fact 2]
+Do not speculate about these topics — the facts above are current as of [today's date]. ]
 
 CONTEXT:
 [any relevant codebase context, file contents, or background]
@@ -400,6 +418,12 @@ YOUR ROLE: You are playing **[Persona Name]** — [one-sentence persona descript
 Stay in character for this follow-up as well.
 
 PREVIOUS QUESTION: [original question]
+
+[GROUNDING FACTS (if any):
+The following facts have been verified by the mediator. Treat these as authoritative and do not contradict them:
+- [verified fact 1]
+- [verified fact 2]
+Do not speculate about these topics — the facts above are current as of [today's date]. ]
 
 YOUR PREVIOUS POSITION: [summary of this agent's last response]
 
@@ -502,6 +526,8 @@ Rotate tips — don't repeat the same tip in back-to-back sessions.
 ### 3. Present the Briefing
 
 Take the subagent's returned output and present it directly to the user. The subagent returns either the compact synthesis (default) or the full briefing (when `--full` is passed). The main context only ever sees this final output — never the raw agent responses.
+
+**Post-synthesis fact check:** Before presenting, scan the briefing for claims about rapidly-changing facts (version numbers, release dates, pricing, availability, LTS/STS status). If any advisor's recommendation hinges on a factual claim that wasn't grounded in Step 1 and could be wrong, do a quick WebSearch to verify it. If an advisor got a fact wrong, add a clearly labeled correction so the user knows the mediator intervened — use the format: `**[Mediator correction:** <what was claimed> is incorrect; <verified fact with source>**]**`. Place these inline next to the relevant advisor's position, or in the Evidence Audit section if the error affects the overall synthesis. Never silently rewrite an advisor's position.
 
 ### 4. Consensus Check
 

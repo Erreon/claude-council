@@ -543,7 +543,7 @@ def _assign_logic(question, topic=None, personas_str=None, fun=False, seats=3):
     }
 
 
-def _prompt_logic(persona_name, question, prior_context=None, context=None):
+def _prompt_logic(persona_name, question, prior_context=None, context=None, grounding_facts=None):
     """Build an agent prompt for a new session. Returns dict with 'prompt' and 'persona'."""
     pname, pdata = lookup_persona(persona_name)
     if not pname:
@@ -555,6 +555,11 @@ def _prompt_logic(persona_name, question, prior_context=None, context=None):
     if prior_context:
         prior_block = f"\n{prior_context}\n"
 
+    grounding_block = ""
+    if grounding_facts:
+        today = datetime.now().strftime("%Y-%m-%d")
+        grounding_block = f"\nGROUNDING FACTS (verified by the mediator — treat as authoritative, do not contradict):\n{grounding_facts}\nDo not speculate about these topics — the facts above are current as of {today}.\n"
+
     context_block = ""
     if context:
         context_block = f"\nCONTEXT:\n{context}\n"
@@ -564,7 +569,7 @@ def _prompt_logic(persona_name, question, prior_context=None, context=None):
 YOUR ROLE: You are playing **{pname}** — {desc}
 Stay in character. Let this perspective shape your analysis, priorities, and recommendations.
 Be specific and opinionated — don't hedge. If you disagree with conventional wisdom, say so.
-{prior_block}{context_block}
+{prior_block}{grounding_block}{context_block}
 QUESTION:
 {question}
 
@@ -954,7 +959,7 @@ End with a single sentence starting with "RECOMMENDATION: I recommend..." that c
         emit({"prompt": prompt.strip(), "persona": pname})
     else:
         # New session prompt
-        result = _prompt_logic(args.persona, args.question, prior_context=args.prior_context, context=args.context)
+        result = _prompt_logic(args.persona, args.question, prior_context=args.prior_context, context=args.context, grounding_facts=getattr(args, 'grounding_facts', None))
         if "error" in result:
             err(result["error"])
         emit(result)
@@ -1319,6 +1324,7 @@ def cmd_pipeline(args):
             info["persona"], question,
             prior_context=historian_context if historian_context else None,
             context=context,
+            grounding_facts=getattr(args, 'grounding_facts', None),
         )
         if "error" in prompt_result:
             err(prompt_result["error"])
@@ -1429,6 +1435,7 @@ def main():
     p_prompt.add_argument("--question", required=True)
     p_prompt.add_argument("--prior-context", default=None)
     p_prompt.add_argument("--context", default=None, help="Codebase or background context")
+    p_prompt.add_argument("--grounding-facts", default=None, help="Verified current-state facts to inject as authoritative context")
     p_prompt.add_argument("--followup", action="store_true")
     p_prompt.add_argument("--previous-position", default=None)
     p_prompt.add_argument("--other-positions", default=None)
@@ -1486,6 +1493,7 @@ def main():
     p_pipeline.add_argument("--seats", type=int, default=3)
     p_pipeline.add_argument("--prior-context", default=None)
     p_pipeline.add_argument("--context", default=None, help="Codebase or background context for prompts")
+    p_pipeline.add_argument("--grounding-facts", default=None, help="Verified current-state facts to inject as authoritative context")
     p_pipeline.add_argument("--labels-json", default=None, help="JSON map of agent->label")
 
     # finalize (post-dispatch: similarity + synthesis-prompt + session append)
