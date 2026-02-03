@@ -109,13 +109,19 @@ Send each debater the OTHER debater's opening argument and ask them to rebut it.
 **Debater rebuttal prompt template:**
 
 ```
-You are a debater in a structured AI debate. Here is your opponent's opening argument:
+You are a debater in a structured AI debate. You have been assigned a position to argue.
+
+YOUR POSITION: [Full position description — restate exactly what was sent in Round 1]
+You MUST continue arguing this position.
+
+TOPIC:
+[the debate topic]
+
+Here is your opponent's opening argument:
 
 ---
 [Other agent's Round 1 response]
 ---
-
-YOUR POSITION: [same position as Round 1]
 
 Write a rebuttal in under 300 words. Attack their weakest points. Defend your position against their strongest points. Concede anything that's genuinely correct — concessions make you more credible.
 ```
